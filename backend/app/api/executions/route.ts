@@ -13,7 +13,7 @@ export const GET = apiHandler(
     const executions = await prisma.execution.findMany({
       skip: (page - 1) * pageSize,
       take: pageSize,
-      orderBy: [{ createdAt: "desc" }], // Changed from startedAt to createdAt
+      orderBy: [{ createdAt: "desc" }], 
       include: { job: true },
     });
 
