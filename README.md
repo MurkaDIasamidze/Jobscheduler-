@@ -1,17 +1,42 @@
-#JobScheduler 
+Absolutely! Here's a comprehensive **README** for your Job Scheduler project, combining frontend, backend, and worker functionality:
 
-This repository contains:
-- backend/: Next.js API + Prisma + PostgreSQL DB
-- frontend/: React + Vite + TypeScript + Tailwind
+---
 
-That implements:
-- JWT auth (login/register/profile)
-- Jobs CRUD
-- Execution history recording via a separate scheduler process that simulates running commands
-- Wokers 
-- Flexible schedule JSON object matching (years, months, weekdays, times)
+# Job Scheduler
 
-Notes:
-- For reliability in production, run the scheduler as a separate process (Docker service, systemd, or a worker)
-- For safety, scheduler currently simulates command execution. Replace with child_process.exec if you understand the security implications.# Jobscheduler-
-# Jobscheduler-
+A full-featured **Job Scheduler** built with **Next.js**, **React**, **TypeScript**, **Tailwind CSS**, **PostgreSQL**, and **Prisma**.
+Supports flexible scheduling, execution history, real-time updates, and role-based user management.
+
+---
+
+## **Features**
+
+### **Frontend**
+
+* User authentication (Register/Login/Logout)
+* Job management:
+
+  * Create, enable/disable, delete jobs
+  * Flexible JSON-based schedule
+  * Immediate UI updates
+* Real-time job and execution updates (auto-refresh every 10 seconds)
+* Execution history display with success status and output
+
+### **Backend**
+
+* Next.js API routes with JWT authentication
+* Job CRUD operations
+* Flexible schedule parsing and validation
+* Worker loop for executing scheduled jobs
+* Worker pool support for parallel execution
+* Execution logging to PostgreSQL
+
+### **Database**
+
+* PostgreSQL + Prisma ORM
+* Tables:
+
+  * `users` – user data and roles
+  * `jobs` – scheduled jobs
+  * `executions` – logs of executed jobs
+
