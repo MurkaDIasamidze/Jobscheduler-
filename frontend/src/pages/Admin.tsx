@@ -16,8 +16,8 @@ export default function Admin() {
     if (!token) return;
     try {
       setLoading(true);
-      const res = await axios.get(API + '/users', {
-        headers: { Authorization: 'Bearer ' + token }
+      const res = await axios.get(`${API}/users`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
       setUsers(res.data);
     } catch (e: any) {
@@ -31,14 +31,11 @@ export default function Admin() {
     if (!token) return;
     try {
       const res = await axios.put(
-        API + '/users',
+        `${API}/users`,
         { id, role },
-        { headers: { Authorization: 'Bearer ' + token } }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-      // Update state safely using previous state
-      setUsers(prevUsers =>
-        prevUsers.map(u => (u.id === id ? { ...u, role: res.data.role } : u))
-      );
+      setUsers(prevUsers => prevUsers.map(u => (u.id === id ? { ...u, role: res.data.role } : u)));
     } catch (e: any) {
       alert('Error updating role: ' + (e.response?.data?.error || e.message));
     }
@@ -64,10 +61,7 @@ export default function Admin() {
       <div className="card p-4 border rounded shadow">
         <div className="flex justify-between mb-2">
           <h2 className="text-lg font-semibold">Users</h2>
-          <button
-            className="button bg-red-500 text-white p-1 rounded"
-            onClick={logout}
-          >
+          <button className="button bg-red-500 text-white p-1 rounded" onClick={logout}>
             Logout
           </button>
         </div>

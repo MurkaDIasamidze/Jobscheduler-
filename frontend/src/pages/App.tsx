@@ -1,82 +1,115 @@
-import React, { useState, useEffect } from 'react'
-import axios from 'axios'
+import React, { useState, useEffect } from "react";
+import axios from "axios";
 
-const API = 'http://localhost:3001/api'
+const API = "http://localhost:3001/api";
 
 function App() {
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'))
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
-  const [jobs, setJobs] = useState<any[]>([])
-  const [jobName, setJobName] = useState('')
-  const [command, setCommand] = useState('')
+  const [token, setToken] = useState<string | null>(
+    localStorage.getItem("token")
+  );
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [jobName, setJobName] = useState("");
+  const [command, setCommand] = useState("");
   const [scheduleText, setScheduleText] = useState(
     '{ "times": [{ "hour": 8, "minute": 0 }], "weekdays": [1], "months": [10], "years": [2025] }'
-  )
+  );
 
   useEffect(() => {
-    if (token) fetchJobs()
-  }, [token])
+    if (token) fetchJobs();
+  }, [token]);
 
   async function login() {
     try {
-      const res = await axios.post(API + '/login', { email, password })
-      setToken(res.data.token)
-      localStorage.setItem('token', res.data.token)
-      setEmail('')
-      setPassword('')
+      const res = await axios.post(`${API}/auth/login`, { email, password });
+      setToken(res.data.token);
+      localStorage.setItem("token", res.data.token);
+      setEmail("");
+      setPassword("");
     } catch (e: any) {
-      alert('Login failed: ' + (e.response?.data?.message || e.message))
+      alert("Login failed: " + (e.response?.data?.error || e.message));
     }
   }
 
   async function register() {
     try {
-      await axios.post(API + '/register', { email, password, name })
-      alert('Registered successfully! Now login.')
-      setEmail('')
-      setPassword('')
-      setName('')
+      await axios.post(`${API}/auth/register`, { email, password, name });
+      alert("Registered successfully! Now login.");
+      setEmail("");
+      setPassword("");
+      setName("");
     } catch (e: any) {
-      alert('Registration failed: ' + (e.response?.data?.message || e.message))
+      alert("Registration failed: " + (e.response?.data?.error || e.message));
     }
   }
 
   async function fetchJobs() {
+    if (!token) return;
     try {
-      const res = await axios.get(API + '/jobs', {
-        headers: { Authorization: 'Bearer ' + token },
-      })
-      setJobs(res.data)
+      const res = await axios.get(`${API}/jobs/get`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setJobs(res.data);
     } catch (e: any) {
-      alert('Failed to fetch jobs: ' + (e.response?.data?.message || e.message))
+      alert("Failed to fetch jobs: " + (e.response?.data?.error || e.message));
     }
   }
 
   async function createJob() {
+    if (!token) return;
     try {
-      const schedule = JSON.parse(scheduleText)
+      const schedule = JSON.parse(scheduleText);
       const res = await axios.post(
-        API + '/create_job',
+        `${API}/jobs`,
         { name: jobName, command, schedule },
-        { headers: { Authorization: 'Bearer ' + token } }
-      )
-      setJobs([res.data, ...jobs])
-      setJobName('')
-      setCommand('')
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setJobs([res.data, ...jobs]);
+      setJobName("");
+      setCommand("");
     } catch (e: any) {
-      alert('Error creating job: ' + (e.response?.data?.message || e.message))
+      alert("Error creating job: " + (e.response?.data?.error || e.message));
+    }
+  }
+
+  async function updateJob(id: string, updates: any) {
+    if (!token) return;
+    try {
+      const res = await axios.put(
+        `${API}/jobs/update`,
+        { id, ...updates },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      setJobs((prev) => prev.map((job) => (job.id === id ? res.data : job)));
+    } catch (e: any) {
+      alert("Failed to update job: " + (e.response?.data?.error || e.message));
+    }
+  }
+
+  async function deleteJob(id: string) {
+    if (!token) return;
+    try {
+      await axios.delete(`${API}/jobs/delete`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { id },
+      });
+      setJobs((prev) => prev.filter((job) => job.id !== id));
+    } catch (e: any) {
+      alert("Failed to delete job: " + (e.response?.data?.error || e.message));
     }
   }
 
   function logout() {
-    localStorage.removeItem('token')
-    setToken(null)
-    setJobs([])
-    setEmail('')
-    setPassword('')
-    setName('')
+    localStorage.removeItem("token");
+    setToken(null);
+    setJobs([]);
+    setEmail("");
+    setPassword("");
+    setName("");
   }
 
   return (
@@ -90,26 +123,32 @@ function App() {
             className="input border p-2 mb-2 w-full"
             placeholder="Email"
             value={email}
-            onChange={e => setEmail(e.target.value)}
+            onChange={(e) => setEmail(e.target.value)}
           />
           <input
             type="password"
             className="input border p-2 mb-2 w-full"
             placeholder="Password"
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={(e) => setPassword(e.target.value)}
           />
           <input
             className="input border p-2 mb-2 w-full"
             placeholder="Name (for register)"
             value={name}
-            onChange={e => setName(e.target.value)}
+            onChange={(e) => setName(e.target.value)}
           />
           <div className="flex gap-2">
-            <button className="button bg-blue-500 text-white p-2 rounded" onClick={login}>
+            <button
+              className="button bg-blue-500 text-white p-2 rounded"
+              onClick={login}
+            >
               Login
             </button>
-            <button className="button bg-green-500 text-white p-2 rounded" onClick={register}>
+            <button
+              className="button bg-green-500 text-white p-2 rounded"
+              onClick={register}
+            >
               Register
             </button>
           </div>
@@ -122,25 +161,31 @@ function App() {
               className="input border p-2 mb-2 w-full"
               placeholder="Job Name"
               value={jobName}
-              onChange={e => setJobName(e.target.value)}
+              onChange={(e) => setJobName(e.target.value)}
             />
             <input
               className="input border p-2 mb-2 w-full"
               placeholder="Command"
               value={command}
-              onChange={e => setCommand(e.target.value)}
+              onChange={(e) => setCommand(e.target.value)}
             />
             <textarea
               className="input border p-2 mb-2 w-full"
               rows={4}
               value={scheduleText}
-              onChange={e => setScheduleText(e.target.value)}
+              onChange={(e) => setScheduleText(e.target.value)}
             />
             <div className="flex gap-2">
-              <button className="button bg-blue-500 text-white p-2 rounded" onClick={createJob}>
+              <button
+                className="button bg-blue-500 text-white p-2 rounded"
+                onClick={createJob}
+              >
                 Create Job
               </button>
-              <button className="button bg-red-500 text-white p-2 rounded" onClick={logout}>
+              <button
+                className="button bg-red-500 text-white p-2 rounded"
+                onClick={logout}
+              >
                 Logout
               </button>
             </div>
@@ -152,11 +197,35 @@ function App() {
               <div>No jobs yet</div>
             ) : (
               <ul>
-                {jobs.map(job => (
+                {jobs.map((job) => (
                   <li key={job.id} className="border-b border-gray-300 py-2">
-                    <div className="font-semibold">{job.name}</div>
-                    <div className="text-sm text-gray-500">{job.command}</div>
-                    <pre className="text-xs">{JSON.stringify(job.schedule, null, 2)}</pre>
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="font-semibold">{job.name}</div>
+                        <div className="text-sm text-gray-500">
+                          {job.command}
+                        </div>
+                        <pre className="text-xs">
+                          {JSON.stringify(job.schedule, null, 2)}
+                        </pre>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          className="button bg-yellow-500 text-white p-1 rounded"
+                          onClick={() =>
+                            updateJob(job.id, { enabled: !job.enabled })
+                          }
+                        >
+                          {job.enabled ? "Disable" : "Enable"}
+                        </button>
+                        <button
+                          className="button bg-red-500 text-white p-1 rounded"
+                          onClick={() => deleteJob(job.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -165,7 +234,7 @@ function App() {
         </>
       )}
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

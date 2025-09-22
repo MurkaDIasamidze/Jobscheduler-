@@ -1,42 +1,21 @@
-// backend/scripts/create-admin.js - NEW FILE
-const bcrypt = require('bcrypt');
-const { PrismaClient } = require('@prisma/client');
+const bcrypt = require("bcrypt");
+const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
-async function createAdminUser() {
-  try {
-    const adminEmail = process.env.ADMIN_USERNAME || 'admin@jobscheduler.local';
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-    
-    console.log('Creating admin user with email:', adminEmail);
-    
-    await prisma.user.deleteMany({
-      where: { email: adminEmail }
-    });
+async function createAdmin() {
+  const email = process.env.ADMIN_USERNAME || "admin@jobscheduler.local";
+  const password = process.env.ADMIN_PASSWORD || "admin123";
 
-    const hashedPassword = await bcrypt.hash(adminPassword, 10);
-    
-    const admin = await prisma.user.create({
-      data: {
-        email: adminEmail,
-        password: hashedPassword,
-        name: 'System Administrator',
-        role: 'admin'
-      }
-    });
+  await prisma.user.deleteMany({ where: { email } });
+  const hashed = await bcrypt.hash(password, 10);
 
-    console.log('✅ Admin user created:', {
-      id: admin.id,
-      email: admin.email,
-      role: admin.role
-    });
+  const admin = await prisma.user.create({
+    data: { email, password: hashed, name: "Admin", role: "admin" },
+  });
 
-  } catch (error) {
-    console.error('❌ Error creating admin user:', error);
-  } finally {
-    await prisma.$disconnect();
-  }
+  console.log("✅ Admin created:", { id: admin.id, email: admin.email, role: admin.role });
+  await prisma.$disconnect();
 }
 
-createAdminUser();
+createAdmin().catch(e => { console.error("❌", e); prisma.$disconnect(); });
