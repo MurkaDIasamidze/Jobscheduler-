@@ -1,13 +1,14 @@
-# Rebuilt jobScheduler (minimal working skeleton)
+#JobScheduler 
 
 This repository contains:
-- backend/: Next.js API + Prisma + scheduler script
+- backend/: Next.js API + Prisma + PostgreSQL DB
 - frontend/: React + Vite + TypeScript + Tailwind
 
-Follow the READMEs in each folder to get started. This is a pragmatic skeleton that implements:
+That implements:
 - JWT auth (login/register/profile)
 - Jobs CRUD
 - Execution history recording via a separate scheduler process that simulates running commands
+- Wokers 
 - Flexible schedule JSON object matching (years, months, weekdays, times)
 
 Notes:
