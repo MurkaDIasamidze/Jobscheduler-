@@ -1,7 +1,3 @@
-Absolutely! Here's a comprehensive **README** for your Job Scheduler project, combining frontend, backend, and worker functionality:
-
----
-
 # Job Scheduler
 
 A full-featured **Job Scheduler** built with **Next.js**, **React**, **TypeScript**, **Tailwind CSS**, **PostgreSQL**, and **Prisma**.
