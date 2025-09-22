@@ -30,10 +30,15 @@ model Job {
 }
 
 model Execution {
-  id        String   @id @default(cuid())
-  job       Job      @relation(fields: [jobId], references: [id])
-  jobId     String
-  ranAt     DateTime @default(now())
-  success   Boolean
-  output    String?
+  id         String   @id @default(cuid())
+  jobId      String
+  success    Boolean
+  output     String?
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+  job        Job      @relation(fields: [jobId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("executions")
 }
