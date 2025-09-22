@@ -1,8 +1,8 @@
+// backend/worker.ts
 import { prisma } from "../lib/prisma";
-import { exec } from "child_process";
+import { exec, ChildProcess } from "child_process";
 import { Prisma } from "@prisma/client";
 
-// Define types for better TypeScript support
 interface ScheduleTime {
   hour: number;
   minute: number;
@@ -24,118 +24,103 @@ type JobWithSchedule = {
   enabled: boolean;
 };
 
-/**
- * Parse schedule from JsonValue to object
- */
-function parseSchedule(schedule: Prisma.JsonValue): ParsedSchedule | null {
+// Track currently running jobs
+const runningJobs = new Map<string, ChildProcess>();
+const MAX_CONCURRENT_JOBS = 5;
+let currentRunning = 0;
+
+export function parseSchedule(schedule: Prisma.JsonValue): ParsedSchedule | null {
   try {
-    // If it's already an object, return it
-    if (typeof schedule === 'object' && schedule !== null) {
-      return schedule as ParsedSchedule;
-    }
-    // If it's a string, try to parse it
-    if (typeof schedule === 'string') {
-      return JSON.parse(schedule) as ParsedSchedule;
-    }
-    // For other types, return null
+    if (typeof schedule === "object" && schedule !== null) return schedule as ParsedSchedule;
+    if (typeof schedule === "string") return JSON.parse(schedule) as ParsedSchedule;
     return null;
   } catch (error) {
-    console.error('Failed to parse schedule:', schedule, error);
+    console.error("Failed to parse schedule:", schedule, error);
     return null;
   }
 }
 
-/**
- * Проверяет, нужно ли выполнить задачу сейчас
- */
-function shouldRun(schedule: ParsedSchedule | null, date: Date = new Date()): boolean {
+export function shouldRun(schedule: ParsedSchedule | null, date: Date = new Date()): boolean {
   if (!schedule) return false;
-
   const years = schedule.years ?? [date.getFullYear()];
-  const months = schedule.months ?? [date.getMonth() + 1]; // JS months 0-11
+  const months = schedule.months ?? [date.getMonth() + 1];
   const weekdays = schedule.weekdays ?? [date.getDay()];
   const daysOfMonth = schedule.daysOfMonth ?? [date.getDate()];
-  const times = schedule.times ?? [
-    { hour: date.getHours(), minute: date.getMinutes() },
-  ];
+  const times = schedule.times ?? [{ hour: date.getHours(), minute: date.getMinutes() }];
 
   if (!years.includes(date.getFullYear())) return false;
   if (!months.includes(date.getMonth() + 1)) return false;
   if (!weekdays.includes(date.getDay())) return false;
   if (!daysOfMonth.includes(date.getDate())) return false;
 
-  return times.some(
-    (t: ScheduleTime) => t.hour === date.getHours() && t.minute === date.getMinutes()
-  );
+  return times.some((t: ScheduleTime) => t.hour === date.getHours() && t.minute === date.getMinutes());
 }
 
-/**
- * Выполняет команду и логирует результат
- */
-async function runJob(job: JobWithSchedule) {
-  return new Promise<void>((resolve) => {
-    const start = new Date();
-    exec(job.command, async (error, stdout, stderr) => {
-      const end = new Date();
-      console.log(`Job "${job.name}" executed. Success: ${!error}`);
+export async function runJob(job: JobWithSchedule) {
+  if (runningJobs.has(job.id)) return;
+  if (currentRunning >= MAX_CONCURRENT_JOBS) return;
 
-      try {
-        await prisma.execution.create({
-          data: {
-            jobId: job.id,
-            success: !error,
-            output: stdout || stderr || null,
-            createdAt: start,
-            updatedAt: end,
-          },
-        });
-      } catch (dbError) {
-        console.error('Database error:', dbError);
-      }
+  currentRunning++;
+  console.log(`Running job: ${job.name}`);
+  const start = new Date();
 
-      resolve();
-    });
-  });
-}
-
-/**
- * Основной цикл worker
- */
-async function workerLoop() {
-  try {
-    console.log("Worker running...");
-    const jobs = await prisma.job.findMany({ where: { enabled: true } });
-
-    const now = new Date();
-    for (const job of jobs) {
-      const schedule = parseSchedule(job.schedule);
-      if (shouldRun(schedule, now)) {
-        console.log(`Running job: ${job.name}`);
-        await runJob(job);
-      }
+  const child = exec(job.command, async (err, stdout, stderr) => {
+    const end = new Date();
+    try {
+      await prisma.execution.create({
+        data: {
+          jobId: job.id,
+          success: !err,
+          output: stdout || stderr || null,
+          createdAt: start,
+          updatedAt: end,
+        },
+      });
+    } catch (dbErr) {
+      console.error("DB error logging execution:", dbErr);
     }
-  } catch (error) {
-    console.error('Worker loop error:', error);
+    runningJobs.delete(job.id);
+    currentRunning--;
+  });
+
+  runningJobs.set(job.id, child);
+}
+
+export async function stopJob(job: JobWithSchedule) {
+  const child = runningJobs.get(job.id);
+  if (child) {
+    child.kill("SIGTERM");
+    runningJobs.delete(job.id);
+    currentRunning--;
+    console.log(`Stopped job: ${job.name}`);
   }
 }
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('Shutting down worker...');
-  await prisma.$disconnect();
-  process.exit(0);
-});
+// Worker loop every 60 seconds
+async function workerLoop() {
+  try {
+    const jobs = await prisma.job.findMany({ where: { enabled: true } });
+    const now = new Date();
+    for (const job of jobs) {
+      const schedule = parseSchedule(job.schedule);
+      if (shouldRun(schedule, now)) await runJob(job);
+    }
+  } catch (err) {
+    console.error("Worker loop error:", err);
+  }
+}
 
-process.on('SIGTERM', async () => {
-  console.log('Shutting down worker...');
-  await prisma.$disconnect();
-  process.exit(0);
-});
-
-// Запуск каждые 60 секунд
-const intervalId = setInterval(workerLoop, 60 * 1000);
-
-// Запуск один раз при старте
+setInterval(workerLoop, 60 * 1000);
 workerLoop().catch(console.error);
 
-console.log('Job scheduler worker started. Press Ctrl+C to stop.');
+process.on("SIGINT", async () => {
+  console.log("Shutting down worker...");
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on("SIGTERM", async () => {
+  console.log("Shutting down worker...");
+  await prisma.$disconnect();
+  process.exit(0);
+});
