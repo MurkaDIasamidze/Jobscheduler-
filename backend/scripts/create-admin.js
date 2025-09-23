@@ -4,8 +4,8 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 async function createAdmin() {
-  const email = process.env.ADMIN_USERNAME || "admin@jobscheduler.local";
-  const password = process.env.ADMIN_PASSWORD || "admin123";
+  const email = process.env.ADMIN_USERNAME || "testAdmin@example.com";
+  const password = process.env.ADMIN_PASSWORD || "admin1234";
 
   await prisma.user.deleteMany({ where: { email } });
   const hashed = await bcrypt.hash(password, 10);
