@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 
-const API = "http://localhost:3001/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 export default function App() {
-  const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
+  const [token, setToken] = useState<string | null>(
+    localStorage.getItem("token")
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -63,7 +65,9 @@ export default function App() {
       });
       setJobs(res.data);
     } catch (e: any) {
-      console.error("Failed to fetch jobs: " + (e.response?.data?.error || e.message));
+      console.error(
+        "Failed to fetch jobs: " + (e.response?.data?.error || e.message)
+      );
     }
   }
 
@@ -75,7 +79,9 @@ export default function App() {
       });
       setExecutions(res.data);
     } catch (e: any) {
-      console.error("Failed to fetch executions: " + (e.response?.data?.error || e.message));
+      console.error(
+        "Failed to fetch executions: " + (e.response?.data?.error || e.message)
+      );
     }
   }
 
@@ -105,7 +111,9 @@ export default function App() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setJobs((prev) =>
-        prev.map((job) => (job.id === jobId ? { ...job, enabled: res.data.enabled } : job))
+        prev.map((job) =>
+          job.id === jobId ? { ...job, enabled: res.data.enabled } : job
+        )
       );
     } catch (e: any) {
       alert("Failed to toggle job: " + (e.response?.data?.error || e.message));
@@ -140,12 +148,38 @@ export default function App() {
     return (
       <div className="container card p-4 border rounded shadow">
         <h2 className="text-lg font-semibold mb-2">Login / Register</h2>
-        <input className="input border p-2 mb-2 w-full" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <input type="password" className="input border p-2 mb-2 w-full" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-        <input className="input border p-2 mb-2 w-full" placeholder="Name (for register)" value={name} onChange={(e) => setName(e.target.value)} />
+        <input
+          className="input border p-2 mb-2 w-full"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <input
+          type="password"
+          className="input border p-2 mb-2 w-full"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <input
+          className="input border p-2 mb-2 w-full"
+          placeholder="Name (for register)"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
         <div className="flex gap-2">
-          <button className="button bg-blue-500 text-white p-2 rounded" onClick={login}>Login</button>
-          <button className="button bg-green-500 text-white p-2 rounded" onClick={register}>Register</button>
+          <button
+            className="button bg-blue-500 text-white p-2 rounded"
+            onClick={login}
+          >
+            Login
+          </button>
+          <button
+            className="button bg-green-500 text-white p-2 rounded"
+            onClick={register}
+          >
+            Register
+          </button>
         </div>
       </div>
     );
@@ -157,19 +191,46 @@ export default function App() {
       {/* Create Job */}
       <div className="card p-4 border rounded shadow mb-4">
         <h2 className="text-lg font-semibold mb-2">Create Job</h2>
-        <input className="input border p-2 mb-2 w-full" placeholder="Job Name" value={jobName} onChange={(e) => setJobName(e.target.value)} />
-        <input className="input border p-2 mb-2 w-full" placeholder="Command" value={command} onChange={(e) => setCommand(e.target.value)} />
-        <textarea className="input border p-2 mb-2 w-full" rows={4} value={scheduleText} onChange={(e) => setScheduleText(e.target.value)} />
+        <input
+          className="input border p-2 mb-2 w-full"
+          placeholder="Job Name"
+          value={jobName}
+          onChange={(e) => setJobName(e.target.value)}
+        />
+        <input
+          className="input border p-2 mb-2 w-full"
+          placeholder="Command"
+          value={command}
+          onChange={(e) => setCommand(e.target.value)}
+        />
+        <textarea
+          className="input border p-2 mb-2 w-full"
+          rows={4}
+          value={scheduleText}
+          onChange={(e) => setScheduleText(e.target.value)}
+        />
         <div className="flex gap-2">
-          <button className="button bg-blue-500 text-white p-2 rounded" onClick={createJob}>Create Job</button>
-          <button className="button bg-red-500 text-white p-2 rounded" onClick={logout}>Logout</button>
+          <button
+            className="button bg-blue-500 text-white p-2 rounded"
+            onClick={createJob}
+          >
+            Create Job
+          </button>
+          <button
+            className="button bg-red-500 text-white p-2 rounded"
+            onClick={logout}
+          >
+            Logout
+          </button>
         </div>
       </div>
 
       {/* Jobs List */}
       <div className="card p-4 border rounded shadow mb-4">
         <h2 className="text-lg font-semibold mb-2">Jobs</h2>
-        {jobs.length === 0 ? <div>No jobs yet</div> : (
+        {jobs.length === 0 ? (
+          <div>No jobs yet</div>
+        ) : (
           <ul>
             {jobs.map((job) => (
               <li key={job.id} className="border-b border-gray-300 py-2">
@@ -177,14 +238,30 @@ export default function App() {
                   <div>
                     <div className="font-semibold">{job.name}</div>
                     <div className="text-sm text-gray-500">{job.command}</div>
-                    <pre className="text-xs">{JSON.stringify(job.schedule, null, 2)}</pre>
-                    <div>Status: {job.enabled ? "✅ Enabled" : "❌ Disabled"}</div>
+                    <pre className="text-xs">
+                      {JSON.stringify(job.schedule, null, 2)}
+                    </pre>
+                    <div>
+                      Status: {job.enabled ? "✅ Enabled" : "❌ Disabled"}
+                    </div>
                   </div>
                   <div className="flex gap-2">
-                    <button className={`button p-1 rounded ${job.enabled ? "bg-yellow-500 text-white" : "bg-green-500 text-white"}`} onClick={() => toggleJob(job.id, job.enabled)}>
+                    <button
+                      className={`button p-1 rounded ${
+                        job.enabled
+                          ? "bg-yellow-500 text-white"
+                          : "bg-green-500 text-white"
+                      }`}
+                      onClick={() => toggleJob(job.id, job.enabled)}
+                    >
                       {job.enabled ? "Disable" : "Enable"}
                     </button>
-                    <button className="button bg-red-500 text-white p-1 rounded" onClick={() => deleteJob(job.id)}>Delete</button>
+                    <button
+                      className="button bg-red-500 text-white p-1 rounded"
+                      onClick={() => deleteJob(job.id)}
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
               </li>
@@ -196,14 +273,20 @@ export default function App() {
       {/* Execution History */}
       <div className="card p-4 border rounded shadow">
         <h2 className="text-lg font-semibold mb-2">Execution History</h2>
-        {executions.length === 0 ? <div>No executions yet</div> : (
+        {executions.length === 0 ? (
+          <div>No executions yet</div>
+        ) : (
           <ul>
             {executions.map((exec) => (
               <li key={exec.id} className="border-b border-gray-300 py-2">
                 <div className="font-semibold">{exec.job.name}</div>
                 <div>Success: {exec.success ? "✅" : "❌"}</div>
-                <div>Output: <pre>{exec.output}</pre></div>
-                <div className="text-xs text-gray-500">{new Date(exec.createdAt).toLocaleString()}</div>
+                <div>
+                  Output: <pre>{exec.output}</pre>
+                </div>
+                <div className="text-xs text-gray-500">
+                  {new Date(exec.createdAt).toLocaleString()}
+                </div>
               </li>
             ))}
           </ul>
