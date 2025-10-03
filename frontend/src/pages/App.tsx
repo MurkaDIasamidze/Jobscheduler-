@@ -3,7 +3,6 @@ import axios from "axios";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
-
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
   const [email, setEmail] = useState("");
@@ -123,92 +122,101 @@ export default function App() {
     setExecutions([]);
   }
 
+  // --- LOGIN / REGISTER ---
   if (!token)
     return (
-      <div className="p-4 border rounded shadow w-[400px] mx-auto mt-10">
-        <h2 className="text-xl font-bold mb-2">Login / Register</h2>
+      <div className="max-w-md mx-auto mt-10 p-6 bg-slate-800 rounded shadow text-white">
+        <h2 className="text-2xl font-bold mb-4 text-center">Login / Register</h2>
         <input
-          className="border p-2 w-full mb-2"
+          className="input mb-2"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
         <input
-          className="border p-2 w-full mb-2"
-          placeholder="Password"
           type="password"
+          className="input mb-2"
+          placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
         <input
-          className="border p-2 w-full mb-2"
+          className="input mb-4"
           placeholder="Name (register only)"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <div className="flex gap-2">
-          <button className="bg-blue-500 text-white px-3 py-1 rounded" onClick={login}>
+        <div className="flex gap-2 justify-center">
+          <button className="button bg-blue-500 hover:bg-blue-400" onClick={login}>
             Login
           </button>
-          <button className="bg-green-500 text-white px-3 py-1 rounded" onClick={register}>
+          <button className="button bg-green-500 hover:bg-green-400" onClick={register}>
             Register
           </button>
         </div>
       </div>
     );
 
+  // --- MAIN APP ---
   return (
-    <div className="p-4 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Job Scheduler</h1>
+    <div className="max-w-4xl mx-auto p-6 space-y-4">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold text-white">Job Scheduler</h1>
+        <button
+          className="button bg-red-600 hover:bg-red-500"
+          onClick={logout}
+        >
+          Logout
+        </button>
+      </div>
+
       {/* Job Creator */}
-      <div className="border rounded p-3 mb-4">
-        <h2 className="font-semibold mb-2">Create Job</h2>
+      <div className="card space-y-2">
+        <h2 className="text-xl font-semibold">Create Job</h2>
         <input
-          className="border p-2 w-full mb-2"
+          className="input"
           placeholder="Job Name"
           value={jobName}
           onChange={(e) => setJobName(e.target.value)}
         />
         <input
-          className="border p-2 w-full mb-2"
+          className="input"
           placeholder="Command"
           value={command}
           onChange={(e) => setCommand(e.target.value)}
         />
         <textarea
-          className="border p-2 w-full mb-2"
-          rows={3}
+          className="input h-24"
           value={scheduleText}
           onChange={(e) => setScheduleText(e.target.value)}
         />
         <div className="flex gap-2">
-          <button className="bg-blue-500 text-white px-3 py-1 rounded" onClick={createJob}>
+          <button className="button bg-blue-500 hover:bg-blue-400" onClick={createJob}>
             Create
-          </button>
-          <button className="bg-red-500 text-white px-3 py-1 rounded" onClick={logout}>
-            Logout
           </button>
         </div>
       </div>
-      {/* Jobs */}
-      <div className="border rounded p-3 mb-4">
-        <h2 className="font-semibold mb-2">Jobs</h2>
+
+      {/* Jobs List */}
+      <div className="card space-y-2">
+        <h2 className="text-xl font-semibold">Jobs</h2>
+        {jobs.length === 0 && <div>No jobs yet</div>}
         {jobs.map((job) => (
-          <div key={job.id} className="border-b py-2 flex justify-between">
+          <div key={job.id} className="flex justify-between border-b border-slate-700 py-2">
             <div>
-              <div className="font-semibold">{job.name}</div>
-              <div className="text-sm">{job.command}</div>
-              <pre className="text-xs">{JSON.stringify(job.schedule, null, 2)}</pre>
+              <div className="font-semibold text-white">{job.name}</div>
+              <div className="text-sm text-slate-300">{job.command}</div>
+              <pre className="text-xs text-slate-400">{JSON.stringify(job.schedule, null, 2)}</pre>
             </div>
             <div className="flex gap-2">
               <button
-                className="bg-yellow-500 text-white px-2 py-1 rounded"
+                className={`button ${job.enabled ? "bg-yellow-500 hover:bg-yellow-400" : "bg-green-500 hover:bg-green-400"}`}
                 onClick={() => toggleJob(job.id, job.enabled)}
               >
                 {job.enabled ? "Disable" : "Enable"}
               </button>
               <button
-                className="bg-red-500 text-white px-2 py-1 rounded"
+                className="button bg-red-500 hover:bg-red-400"
                 onClick={() => deleteJob(job.id)}
               >
                 Delete
@@ -217,15 +225,17 @@ export default function App() {
           </div>
         ))}
       </div>
+
       {/* Executions */}
-      <div className="border rounded p-3">
-        <h2 className="font-semibold mb-2">Executions</h2>
+      <div className="card space-y-2">
+        <h2 className="text-xl font-semibold">Executions</h2>
+        {executions.length === 0 && <div>No executions yet</div>}
         {executions.map((ex) => (
-          <div key={ex.id} className="border-b py-2">
-            <div>{ex.job.name}</div>
+          <div key={ex.id} className="border-b border-slate-700 py-2 text-slate-200">
+            <div className="font-semibold">{ex.job.name}</div>
             <div>Success: {ex.success ? "✅" : "❌"}</div>
-            <div>Output: <pre>{ex.output}</pre></div>
-            <div className="text-xs">{new Date(ex.createdAt).toLocaleString()}</div>
+            <div>Output: <pre className="text-xs">{ex.output}</pre></div>
+            <div className="text-xs text-slate-400">{new Date(ex.createdAt).toLocaleString()}</div>
           </div>
         ))}
       </div>
