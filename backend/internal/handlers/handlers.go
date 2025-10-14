@@ -1,170 +1,137 @@
 package handlers
 
 import (
-    "encoding/json"
-    "net/http"
-    "strconv"
-    "time"
+	"strings"
+	"sync"
+	"time"
 
-    "github.com/gorilla/mux"
-    "github.com/yourusername/jobscheduler-go/internal/db"
-    "github.com/yourusername/jobscheduler-go/internal/models"
-    "github.com/yourusername/jobscheduler-go/internal/scheduler"
-    "gorm.io/gorm"
+	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/yourusername/jobscheduler-go/internal/db"
+	"github.com/yourusername/jobscheduler-go/internal/models"
+	"github.com/yourusername/jobscheduler-go/internal/scheduler"
 )
 
 type Handler struct {
-    DB        *db.DB
-    Scheduler *scheduler.Scheduler
+	DB        *db.DB
+	Scheduler *scheduler.Scheduler
+	JWTSecret string
 }
 
-// helper response
-func jsonResp(w http.ResponseWriter, v interface{}, code int) {
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(code)
-    _ = json.NewEncoder(w).Encode(v)
+// ---- AUTH ----
+
+func (h *Handler) Register(c *fiber.Ctx) error {
+	var req struct {
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+	}
+
+	hashed, _ := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
+	user := models.User{Name: req.Name, Email: req.Email, Password: string(hashed), Role: "user"}
+	if err := h.DB.GORM.Create(&user).Error; err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Email already exists"})
+	}
+	return c.Status(201).JSON(user)
 }
 
-// list jobs
-func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
-    var jobs []models.Job
-    if err := h.DB.GORM.Find(&jobs).Error; err != nil {
-        jsonResp(w, map[string]string{"error": err.Error()}, http.StatusInternalServerError)
-        return
-    }
-    jsonResp(w, jobs, http.StatusOK)
+func (h *Handler) Login(c *fiber.Ctx) error {
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+	}
+
+	var user models.User
+	if err := h.DB.GORM.Where("email = ?", req.Email).First(&user).Error; err != nil {
+		return c.Status(401).JSON(fiber.Map{"error": "Invalid credentials"})
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+		return c.Status(401).JSON(fiber.Map{"error": "Invalid credentials"})
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id": user.ID,
+		"role":    user.Role,
+		"exp":     time.Now().Add(24 * time.Hour).Unix(),
+	})
+
+	t, _ := token.SignedString([]byte(h.JWTSecret))
+	return c.JSON(fiber.Map{"token": t})
 }
 
-// create job
-func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
-    var j models.Job
-    if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
-        jsonResp(w, map[string]string{"error": "invalid body"}, http.StatusBadRequest)
-        return
-    }
-    j.CreatedAt = time.Now()
-    j.UpdatedAt = time.Now()
-    if err := h.DB.GORM.Create(&j).Error; err != nil {
-        jsonResp(w, map[string]string{"error": err.Error()}, http.StatusInternalServerError)
-        return
-    }
+func (h *Handler) AuthMiddleware(c *fiber.Ctx) error {
+	auth := c.Get("Authorization")
+	if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
+		return c.Status(401).JSON(fiber.Map{"error": "Missing token"})
+	}
+	tokenStr := strings.TrimPrefix(auth, "Bearer ")
 
-    // schedule immediately if enabled
-    if j.Enabled {
-        _ = h.Scheduler.ScheduleJob(&j)
-    }
-
-    jsonResp(w, j, http.StatusCreated)
+	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+		return []byte(h.JWTSecret), nil
+	})
+	if err != nil || !token.Valid {
+		return c.Status(401).JSON(fiber.Map{"error": "Invalid token"})
+	}
+	return c.Next()
 }
 
-// get job
-func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
-    idStr := mux.Vars(r)["id"]
-    id, _ := strconv.Atoi(idStr)
-    var j models.Job
-    if err := h.DB.GORM.First(&j, id).Error; err != nil {
-        if err == gorm.ErrRecordNotFound {
-            jsonResp(w, map[string]string{"error": "not found"}, http.StatusNotFound)
-            return
-        }
-        jsonResp(w, map[string]string{"error": err.Error()}, http.StatusInternalServerError)
-        return
-    }
-    jsonResp(w, j, http.StatusOK)
+// ---- JOBS ----
+
+func (h *Handler) ListJobs(c *fiber.Ctx) error {
+	var jobs []models.Job
+	h.DB.GORM.Find(&jobs)
+	return c.JSON(jobs)
 }
 
-// update job
-func (h *Handler) UpdateJob(w http.ResponseWriter, r *http.Request) {
-    idStr := mux.Vars(r)["id"]
-    id, _ := strconv.Atoi(idStr)
-    var j models.Job
-    if err := h.DB.GORM.First(&j, id).Error; err != nil {
-        jsonResp(w, map[string]string{"error": "not found"}, http.StatusNotFound)
-        return
-    }
-
-    var in models.Job
-    if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-        jsonResp(w, map[string]string{"error": "invalid body"}, http.StatusBadRequest)
-        return
-    }
-
-    j.Name = in.Name
-    j.Schedule = in.Schedule
-    j.Command = in.Command
-    j.Enabled = in.Enabled
-    j.UpdatedAt = time.Now()
-
-    if err := h.DB.GORM.Save(&j).Error; err != nil {
-        jsonResp(w, map[string]string{"error": err.Error()}, http.StatusInternalServerError)
-        return
-    }
-
-    // reschedule
-    _ = h.Scheduler.RescheduleJob(&j)
-
-    jsonResp(w, j, http.StatusOK)
+func (h *Handler) CreateJob(c *fiber.Ctx) error {
+	var j models.Job
+	if err := c.BodyParser(&j); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
+	}
+	j.CreatedAt = time.Now()
+	j.UpdatedAt = time.Now()
+	h.DB.GORM.Create(&j)
+	if j.Enabled {
+		_ = h.Scheduler.ScheduleJob(&j)
+	}
+	return c.Status(201).JSON(j)
 }
 
-// delete job
-func (h *Handler) DeleteJob(w http.ResponseWriter, r *http.Request) {
-    idStr := mux.Vars(r)["id"]
-    id, _ := strconv.Atoi(idStr)
-    if err := h.DB.GORM.Delete(&models.Job{}, id).Error; err != nil {
-        jsonResp(w, map[string]string{"error": err.Error()}, http.StatusInternalServerError)
-        return
-    }
-    // also remove from scheduler
-    h.Scheduler.Remove(int64(id))
-    w.WriteHeader(http.StatusNoContent)
+func (h *Handler) RunJobNow(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var job models.Job
+	if err := h.DB.GORM.First(&job, id).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Job not found"})
+	}
+	exec, err := h.Scheduler.RunJobNow(&job)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(exec)
 }
 
-// toggle enabled
-func (h *Handler) ToggleJob(w http.ResponseWriter, r *http.Request) {
-    idStr := mux.Vars(r)["id"]
-    id, _ := strconv.Atoi(idStr)
-    var j models.Job
-    if err := h.DB.GORM.First(&j, id).Error; err != nil {
-        jsonResp(w, map[string]string{"error": "not found"}, http.StatusNotFound)
-        return
-    }
-    j.Enabled = !j.Enabled
-    j.UpdatedAt = time.Now()
-    if err := h.DB.GORM.Save(&j).Error; err != nil {
-        jsonResp(w, map[string]string{"error": err.Error()}, http.StatusInternalServerError)
-        return
-    }
-    if j.Enabled {
-        _ = h.Scheduler.ScheduleJob(&j)
-    } else {
-        h.Scheduler.Remove(int64(j.ID))
-    }
-    jsonResp(w, j, http.StatusOK)
-}
+// ---- PARALLEL MULTI-COMMAND ----
+func RunMultipleCommands(commands []string) []string {
+	var wg sync.WaitGroup
+	outputs := make([]string, len(commands))
 
-// run job immediately
-func (h *Handler) RunJobNow(w http.ResponseWriter, r *http.Request) {
-    idStr := mux.Vars(r)["id"]
-    id, _ := strconv.Atoi(idStr)
-    var j models.Job
-    if err := h.DB.GORM.First(&j, id).Error; err != nil {
-        jsonResp(w, map[string]string{"error": "not found"}, http.StatusNotFound)
-        return
-    }
-    exec, err := h.Scheduler.RunJobNow(&j)
-    if err != nil {
-        jsonResp(w, map[string]string{"error": err.Error()}, http.StatusInternalServerError)
-        return
-    }
-    jsonResp(w, exec, http.StatusOK)
-}
-
-// list executions
-func (h *Handler) ListExecutions(w http.ResponseWriter, r *http.Request) {
-    var exs []models.Execution
-    if err := h.DB.GORM.Order("started_at desc").Limit(200).Find(&exs).Error; err != nil {
-        jsonResp(w, map[string]string{"error": err.Error()}, http.StatusInternalServerError)
-        return
-    }
-    jsonResp(w, exs, http.StatusOK)
+	for i, cmd := range commands {
+		wg.Add(1)
+		go func(i int, cmd string) {
+			defer wg.Done()
+			outputs[i] = scheduler.ExecuteCommand(cmd)
+		}(i, cmd)
+	}
+	wg.Wait()
+	return outputs
 }

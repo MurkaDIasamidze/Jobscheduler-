@@ -1,40 +1,39 @@
 package config
 
 import (
-    "log"
-    "os"
+	"log"
+	"os"
 
-    "github.com/joho/godotenv"
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
-    Port        string
-    DatabaseURL string
-    LogLevel    string
+	Port        string
+	DatabaseURL string
+	JWTSecret   string
 }
 
 func Load() *Config {
-    // load .env if present
-    _ = godotenv.Load()
+	_ = godotenv.Load()
 
-    port := os.Getenv("PORT")
-    if port == "" {
-        port = "8080"
-    }
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "3001"
+	}
 
-    dbURL := os.Getenv("DATABASE_URL")
-    if dbURL == "" {
-        log.Fatal("DATABASE_URL missing (set it in .env or env vars)")
-    }
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL missing")
+	}
 
-    lvl := os.Getenv("LOG_LEVEL")
-    if lvl == "" {
-        lvl = "info"
-    }
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		log.Fatal("JWT_SECRET missing")
+	}
 
-    return &Config{
-        Port:        port,
-        DatabaseURL: dbURL,
-        LogLevel:    lvl,
-    }
+	return &Config{
+		Port:        port,
+		DatabaseURL: dbURL,
+		JWTSecret:   secret,
+	}
 }

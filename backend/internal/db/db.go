@@ -1,39 +1,26 @@
 package db
 
 import (
-    "fmt"
-    "log"
+	"log"
 
-    "github.com/yourusername/jobscheduler-go/internal/config"
-    "github.com/yourusername/jobscheduler-go/internal/models"
-    "gorm.io/driver/postgres"
-    "gorm.io/gorm"
+	"github.com/yourusername/jobscheduler-go/internal/config"
+	"github.com/yourusername/jobscheduler-go/internal/models"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 type DB struct {
-    GORM *gorm.DB
+	GORM *gorm.DB
 }
 
-func New(cfg *config.Config) (*DB, error) {
-    dsn := cfg.DatabaseURL
-    gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-    if err != nil {
-        return nil, err
-    }
-
-    // AutoMigrate models
-    if err := gdb.AutoMigrate(&models.Job{}, &models.Execution{}); err != nil {
-        return nil, fmt.Errorf("auto migrate: %w", err)
-    }
-
-    log.Println("db connected and migrated")
-    return &DB{GORM: gdb}, nil
-}
-
-func (db *DB) Close() error {
-    sqlDB, err := db.GORM.DB()
-    if err != nil {
-        return err
-    }
-    return sqlDB.Close()
+func New(cfg *config.Config) *DB {
+	gdb, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
+	if err != nil {
+		log.Fatal("failed to connect database:", err)
+	}
+	if err := gdb.AutoMigrate(&models.User{}, &models.Job{}, &models.Execution{}); err != nil {
+		log.Fatal("auto migrate error:", err)
+	}
+	log.Println("Database connected & migrated.")
+	return &DB{GORM: gdb}
 }

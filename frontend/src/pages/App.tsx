@@ -9,23 +9,30 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
 
+  const [users, setUsers] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
   const [executions, setExecutions] = useState<any[]>([]);
 
   const [jobName, setJobName] = useState("");
   const [command, setCommand] = useState("");
   const [scheduleText, setScheduleText] = useState(
-    '{ "times": [{ "hour": 8, "minute": 0 }], "weekdays": [1] }'
+    JSON.stringify({ month: 1, year: 2025, day: 1, hour: 8, minute: 0 }, null, 2)
   );
 
+  // --- Fetch data ---
   useEffect(() => {
     if (!token) return;
+
+    fetchUsers();
     fetchJobs();
     fetchExecutions();
+
     const interval = setInterval(() => {
+      fetchUsers();
       fetchJobs();
       fetchExecutions();
     }, 10000);
+
     return () => clearInterval(interval);
   }, [token]);
 
@@ -48,29 +55,52 @@ export default function App() {
     }
   }
 
-  async function fetchJobs() {
+  async function fetchUsers() {
+    if (!token) return;
     try {
-      const res = await axios.get(`${API}/jobs`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await axios.get(`${API}/users`, { headers: { Authorization: `Bearer ${token}` } });
+      setUsers(res.data);
+    } catch (e: any) {
+      console.error("Fetch users error", e);
+    }
+  }
+
+  async function changeRole(id: string, role: string) {
+    if (!token) return;
+    try {
+      const res = await axios.put(
+        `${API}/users`,
+        { id, role },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role: res.data.role } : u)));
+    } catch (e: any) {
+      alert("Update role failed: " + (e.response?.data?.error || e.message));
+    }
+  }
+
+  async function fetchJobs() {
+    if (!token) return;
+    try {
+      const res = await axios.get(`${API}/jobs`, { headers: { Authorization: `Bearer ${token}` } });
       setJobs(res.data);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Fetch jobs error", e);
     }
   }
 
   async function fetchExecutions() {
+    if (!token) return;
     try {
-      const res = await axios.get(`${API}/executions`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await axios.get(`${API}/executions`, { headers: { Authorization: `Bearer ${token}` } });
       setExecutions(res.data);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Fetch executions error", e);
     }
   }
 
   async function createJob() {
+    if (!token) return;
     try {
       const schedule = JSON.parse(scheduleText);
       const res = await axios.post(
@@ -87,6 +117,7 @@ export default function App() {
   }
 
   async function toggleJob(id: string, enabled: boolean) {
+    if (!token) return;
     try {
       const res = await axios.put(
         `${API}/jobs/update`,
@@ -94,9 +125,7 @@ export default function App() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setJobs((prev) =>
-        prev.map((job) =>
-          job.id === id ? { ...job, enabled: res.data.enabled } : job
-        )
+        prev.map((job) => (job.id === id ? { ...job, enabled: res.data.enabled } : job))
       );
     } catch (e: any) {
       alert("Error toggling job: " + (e.response?.data?.error || e.message));
@@ -104,11 +133,9 @@ export default function App() {
   }
 
   async function deleteJob(id: string) {
+    if (!token) return;
     try {
-      await axios.delete(`${API}/jobs/delete`, {
-        headers: { Authorization: `Bearer ${token}` },
-        data: { id },
-      });
+      await axios.delete(`${API}/jobs/delete`, { headers: { Authorization: `Bearer ${token}` }, data: { id } });
       setJobs((prev) => prev.filter((j) => j.id !== id));
     } catch (e: any) {
       alert("Error deleting job: " + (e.response?.data?.error || e.message));
@@ -118,6 +145,7 @@ export default function App() {
   function logout() {
     localStorage.removeItem("token");
     setToken(null);
+    setUsers([]);
     setJobs([]);
     setExecutions([]);
   }
@@ -159,49 +187,52 @@ export default function App() {
 
   // --- MAIN APP ---
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-4">
+    <div className="max-w-5xl mx-auto p-6 space-y-4">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-white">Job Scheduler</h1>
-        <button
-          className="button bg-red-600 hover:bg-red-500"
-          onClick={logout}
-        >
-          Logout
-        </button>
+        <h1 className="text-3xl font-bold text-white">Admin Panel / Job Scheduler</h1>
+        <button className="button bg-red-600 hover:bg-red-500" onClick={logout}>Logout</button>
+      </div>
+
+      {/* Users */}
+      <div className="card space-y-2">
+        <h2 className="text-xl font-semibold">Users</h2>
+        <table className="w-full table-auto text-left">
+          <thead>
+            <tr className="border-b border-slate-700">
+              <th>Email</th><th>Name</th><th>Role</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map(u => (
+              <tr key={u.id} className="border-b border-slate-700">
+                <td>{u.email}</td>
+                <td>{u.name || "-"}</td>
+                <td>{u.role}</td>
+                <td className="flex gap-2 py-1">
+                  <button className="button bg-blue-500 hover:bg-blue-400 text-black" onClick={() => changeRole(u.id, "user")}>Set User</button>
+                  <button className="button bg-green-500 hover:bg-green-400 text-black" onClick={() => changeRole(u.id, "admin")}>Set Admin</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* Job Creator */}
       <div className="card space-y-2">
         <h2 className="text-xl font-semibold">Create Job</h2>
-        <input
-          className="input"
-          placeholder="Job Name"
-          value={jobName}
-          onChange={(e) => setJobName(e.target.value)}
-        />
-        <input
-          className="input"
-          placeholder="Command"
-          value={command}
-          onChange={(e) => setCommand(e.target.value)}
-        />
-        <textarea
-          className="input h-24"
-          value={scheduleText}
-          onChange={(e) => setScheduleText(e.target.value)}
-        />
+        <input className="input" placeholder="Job Name" value={jobName} onChange={e => setJobName(e.target.value)} />
+        <input className="input" placeholder="Command" value={command} onChange={e => setCommand(e.target.value)} />
+        <textarea className="input h-24" value={scheduleText} onChange={e => setScheduleText(e.target.value)} />
         <div className="flex gap-2">
-          <button className="button bg-blue-500 hover:bg-blue-400" onClick={createJob}>
-            Create
-          </button>
+          <button className="button bg-blue-500 hover:bg-blue-400" onClick={createJob}>Create</button>
         </div>
       </div>
 
       {/* Jobs List */}
       <div className="card space-y-2">
         <h2 className="text-xl font-semibold">Jobs</h2>
-        {jobs.length === 0 && <div>No jobs yet</div>}
-        {jobs.map((job) => (
+        {jobs.map(job => (
           <div key={job.id} className="flex justify-between border-b border-slate-700 py-2">
             <div>
               <div className="font-semibold text-white">{job.name}</div>
@@ -209,18 +240,10 @@ export default function App() {
               <pre className="text-xs text-slate-400">{JSON.stringify(job.schedule, null, 2)}</pre>
             </div>
             <div className="flex gap-2">
-              <button
-                className={`button ${job.enabled ? "bg-yellow-500 hover:bg-yellow-400" : "bg-green-500 hover:bg-green-400"}`}
-                onClick={() => toggleJob(job.id, job.enabled)}
-              >
+              <button className={`button ${job.enabled ? "bg-yellow-500 hover:bg-yellow-400" : "bg-green-500 hover:bg-green-400"}`} onClick={() => toggleJob(job.id, job.enabled)}>
                 {job.enabled ? "Disable" : "Enable"}
               </button>
-              <button
-                className="button bg-red-500 hover:bg-red-400"
-                onClick={() => deleteJob(job.id)}
-              >
-                Delete
-              </button>
+              <button className="button bg-red-500 hover:bg-red-400" onClick={() => deleteJob(job.id)}>Delete</button>
             </div>
           </div>
         ))}
@@ -229,10 +252,9 @@ export default function App() {
       {/* Executions */}
       <div className="card space-y-2">
         <h2 className="text-xl font-semibold">Executions</h2>
-        {executions.length === 0 && <div>No executions yet</div>}
-        {executions.map((ex) => (
+        {executions.map(ex => (
           <div key={ex.id} className="border-b border-slate-700 py-2 text-slate-200">
-            <div className="font-semibold">{ex.job.name}</div>
+            <div className="font-semibold">{ex.job?.name}</div>
             <div>Success: {ex.success ? "✅" : "❌"}</div>
             <div>Output: <pre className="text-xs">{ex.output}</pre></div>
             <div className="text-xs text-slate-400">{new Date(ex.createdAt).toLocaleString()}</div>

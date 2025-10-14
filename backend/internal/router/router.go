@@ -1,45 +1,22 @@
 package router
 
 import (
-    "net/http"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 
-    "github.com/gorilla/mux"
-    "github.com/rs/cors"
-
-    "github.com/yourusername/jobscheduler-go/internal/db"
-    "github.com/yourusername/jobscheduler-go/internal/handlers"
-    "github.com/yourusername/jobscheduler-go/internal/scheduler"
+	"github.com/yourusername/jobscheduler-go/internal/handlers"
 )
 
-func New(d *db.DB, sched *scheduler.Scheduler) http.Handler {
-    h := &handlers.Handler{DB: d, Scheduler: sched}
-    r := mux.NewRouter()
+func Setup(app *fiber.App, h *handlers.Handler) {
+	app.Use(cors.New())
 
-    api := r.PathPrefix("/api").Subrouter()
+	api := app.Group("/api")
 
-    api.HandleFunc("/jobs", h.ListJobs).Methods("GET")
-    api.HandleFunc("/jobs", h.CreateJob).Methods("POST")
-    api.HandleFunc("/jobs/{id:[0-9]+}", h.GetJob).Methods("GET")
-    api.HandleFunc("/jobs/{id:[0-9]+}", h.UpdateJob).Methods("PUT")
-    api.HandleFunc("/jobs/{id:[0-9]+}", h.DeleteJob).Methods("DELETE")
-    api.HandleFunc("/jobs/{id:[0-9]+}/toggle", h.ToggleJob).Methods("POST")
-    api.HandleFunc("/jobs/{id:[0-9]+}/run", h.RunJobNow).Methods("POST")
+	api.Post("/auth/register", h.Register)
+	api.Post("/auth/login", h.Login)
 
-    api.HandleFunc("/executions", h.ListExecutions).Methods("GET")
-
-    // health
-    r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-        w.WriteHeader(http.StatusOK)
-        _, _ = w.Write([]byte("ok"))
-    }).Methods("GET")
-
-    // enable CORS
-    c := cors.New(cors.Options{
-        AllowedOrigins:   []string{"http://localhost:3000"}, // разрешаем фронтенд
-        AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-        AllowedHeaders:   []string{"Authorization", "Content-Type"},
-        AllowCredentials: true,
-    })
-
-    return c.Handler(r)
+	protected := api.Group("/", h.AuthMiddleware)
+	protected.Get("/jobs", h.ListJobs)
+	protected.Post("/jobs", h.CreateJob)
+	protected.Post("/jobs/:id/run", h.RunJobNow)
 }
