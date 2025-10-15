@@ -23,6 +23,32 @@ export default function App() {
   const [jobName, setJobName] = useState("");
   const [command, setCommand] = useState("");
   const [schedule, setSchedule] = useState("0 * * * * *");
+  const [serverStatus, setServerStatus] = useState<"checking" | "connected" | "error">("checking");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  // Check server connection on mount
+  useEffect(() => {
+    checkServerConnection();
+  }, []);
+
+  async function checkServerConnection() {
+    console.log("[SERVER_CHECK] Checking backend connection...");
+    try {
+      const res = await axios.get(`${API}/health`, { timeout: 5000 });
+      console.log("[SERVER_CHECK] Server is healthy:", res.data);
+      setServerStatus("connected");
+    } catch (e: any) {
+      console.error("[SERVER_CHECK] Failed to connect:", e.message);
+      if (e.code === "ECONNABORTED" || e.code === "ERR_NETWORK") {
+        setErrorMessage("Cannot connect to backend server. Please ensure the server is running.");
+      } else if (e.response?.status === 500) {
+        setErrorMessage("Database connection failed. Please check your DATABASE_URL configuration.");
+      } else {
+        setErrorMessage(`Server error: ${e.message}`);
+      }
+      setServerStatus("error");
+    }
+  }
 
   useEffect(() => {
     if (token) {

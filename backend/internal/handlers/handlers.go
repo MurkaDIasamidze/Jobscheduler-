@@ -19,6 +19,31 @@ type Handler struct {
 	JWTSecret string
 }
 
+// ---- HEALTH CHECK ----
+func (h *Handler) HealthCheck(c *fiber.Ctx) error {
+	// Check database connection
+	sqlDB, err := h.DB.GORM.DB()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"status": "error",
+			"error":  "Database connection failed",
+		})
+	}
+
+	if err := sqlDB.Ping(); err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"status": "error",
+			"error":  "Database ping failed",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":   "ok",
+		"database": "connected",
+		"time":     time.Now(),
+	})
+}
+
 // ---- AUTH ----
 func (h *Handler) Register(c *fiber.Ctx) error {
 	var req struct {
