@@ -37,78 +37,121 @@ export default function App() {
   }, [token]);
 
   async function login() {
+    console.log("[LOGIN] Attempting login for:", email);
     try {
       const res = await axios.post(`${API}/auth/login`, { email, password });
+      console.log("[LOGIN] Success:", res.data);
       setToken(res.data.token);
       localStorage.setItem("token", res.data.token);
     } catch (e: any) {
+      console.error("[LOGIN] Failed:", e.response?.data || e.message);
       alert("Login failed: " + (e.response?.data?.error || e.message));
     }
   }
 
   async function register() {
+    console.log("[REGISTER] Attempting registration for:", email);
     try {
       await axios.post(`${API}/auth/register`, { email, password, name });
+      console.log("[REGISTER] Success");
       alert("Registered! Now login.");
     } catch (e: any) {
+      console.error("[REGISTER] Failed:", e.response?.data || e.message);
       alert("Registration failed: " + (e.response?.data?.error || e.message));
     }
   }
 
   async function fetchJobs() {
+    console.log("[FETCH_JOBS] Fetching jobs...");
     try {
       const res = await axios.get(`${API}/jobs`, { headers: { Authorization: `Bearer ${token}` } });
+      console.log("[FETCH_JOBS] Success, found", res.data.length, "jobs");
       setJobs(res.data);
-    } catch (e) {}
+    } catch (e: any) {
+      console.error("[FETCH_JOBS] Failed:", e.response?.data || e.message);
+      if (e.response?.status === 401) {
+        console.warn("[FETCH_JOBS] Unauthorized - token may be invalid");
+        localStorage.removeItem("token");
+        setToken(null);
+      }
+    }
   }
 
   async function createJob() {
-    if (!jobName || !command) return alert("Fill all fields");
+    if (!jobName || !command) {
+      console.warn("[CREATE_JOB] Validation failed: missing fields");
+      return alert("Fill all fields");
+    }
+    console.log("[CREATE_JOB] Creating job:", { jobName, schedule });
     try {
+      const commands = command.split("\n").filter(c => c.trim());
       const res = await axios.post(
         `${API}/jobs`,
-        { name: jobName, commands: command.split("\n").filter(c => c.trim()), schedule, enabled: true },
+        { name: jobName, commands, schedule, enabled: true },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      console.log("[CREATE_JOB] Success:", res.data);
       setJobs([res.data, ...jobs]);
       setJobName("");
       setCommand("");
       alert("Job created!");
     } catch (e: any) {
+      console.error("[CREATE_JOB] Failed:", e.response?.data || e.message);
       alert("Error: " + (e.response?.data?.error || e.message));
     }
   }
 
   async function toggleJob(id: number, enabled: boolean) {
+    console.log("[TOGGLE_JOB] Toggling job", id, "to", !enabled);
     try {
       const res = await axios.put(`${API}/jobs/${id}`, { enabled: !enabled }, { headers: { Authorization: `Bearer ${token}` } });
+      console.log("[TOGGLE_JOB] Success:", res.data);
       setJobs(prev => prev.map(j => j.id === id ? { ...j, enabled: res.data.enabled } : j));
-    } catch (e) {}
+    } catch (e: any) {
+      console.error("[TOGGLE_JOB] Failed:", e.response?.data || e.message);
+      alert("Toggle failed: " + (e.response?.data?.error || e.message));
+    }
   }
 
   async function deleteJob(id: number) {
     if (!confirm("Delete job?")) return;
+    console.log("[DELETE_JOB] Deleting job", id);
     try {
       await axios.delete(`${API}/jobs/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      console.log("[DELETE_JOB] Success");
       setJobs(prev => prev.filter(j => j.id !== id));
-    } catch (e) {}
+      alert("Job deleted!");
+    } catch (e: any) {
+      console.error("[DELETE_JOB] Failed:", e.response?.data || e.message);
+      alert("Delete failed: " + (e.response?.data?.error || e.message));
+    }
   }
 
   async function runJobNow(id: number) {
+    console.log("[RUN_JOB] Running job", id);
     try {
       await axios.post(`${API}/jobs/${id}/run`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      console.log("[RUN_JOB] Success - job started");
       alert("Job started!");
       setTimeout(fetchExecutions, 2000);
     } catch (e: any) {
+      console.error("[RUN_JOB] Failed:", e.response?.data || e.message);
       alert("Error: " + (e.response?.data?.error || e.message));
     }
   }
 
   async function fetchExecutions() {
+    console.log("[FETCH_EXECUTIONS] Fetching executions...");
     try {
       const res = await axios.get(`${API}/executions`, { headers: { Authorization: `Bearer ${token}` } });
+      console.log("[FETCH_EXECUTIONS] Success, found", res.data.length, "executions");
       setExecutions(res.data);
-    } catch (e) {}
+    } catch (e: any) {
+      console.error("[FETCH_EXECUTIONS] Failed:", e.response?.data || e.message);
+      if (e.response?.status === 401) {
+        console.warn("[FETCH_EXECUTIONS] Unauthorized - token may be invalid");
+      }
+    }
   }
 
   if (!token) {
