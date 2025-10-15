@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -77,7 +78,7 @@ func (s *Scheduler) ScheduleJob(j *models.Job) error {
 		return nil
 	}
 
-	// one-time job
+	// One-time job
 	if j.RunAt != nil && j.RunAt.After(time.Now()) {
 		duration := time.Until(*j.RunAt)
 		timer := time.AfterFunc(duration, func() {
@@ -91,7 +92,7 @@ func (s *Scheduler) ScheduleJob(j *models.Job) error {
 		return nil
 	}
 
-	// recurring cron job
+	// Recurring cron job
 	if j.Schedule != "" {
 		entryID, err := s.cron.AddFunc(j.Schedule, func() { s.runJob(j.ID) })
 		if err != nil {
@@ -136,7 +137,7 @@ func (s *Scheduler) RunJobNow(j *models.Job) (*models.Execution, error) {
 	return exec, nil
 }
 
-// run job by ID
+// runJob runs job by ID
 func (s *Scheduler) runJob(jobID uint) {
 	var j models.Job
 	if err := s.db.GORM.First(&j, jobID).Error; err != nil {
@@ -160,19 +161,31 @@ func (s *Scheduler) runJob(jobID uint) {
 
 	go s.executeCommands(exec.ID, &j)
 }
-// ExecuteCommand runs a single shell command with timeout
+
+// ExecuteCommand runs a single shell command cross-platform
 func ExecuteCommand(cmdStr string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	var cmd *exec.Cmd
+	if isWindows() {
+		cmd = exec.CommandContext(ctx, "cmd", "/C", cmdStr)
+	} else {
+		cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	}
+
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out) + "\nError: " + err.Error()
 	}
 	return string(out)
 }
-// execute multiple commands concurrently using WaitGroup
+
+func isWindows() bool {
+	return strings.Contains(strings.ToLower(runtime.GOOS), "windows")
+}
+
+// executeCommands runs multiple commands concurrently and updates DB
 func (s *Scheduler) executeCommands(execID uint, j *models.Job) {
 	commands := j.Commands
 	if len(commands) == 0 && j.CommandsRaw != "" {
@@ -191,7 +204,13 @@ func (s *Scheduler) executeCommands(execID uint, j *models.Job) {
 			ctx, cancel := context.WithTimeout(s.ctx, 5*time.Minute)
 			defer cancel()
 
-			cmd := exec.CommandContext(ctx, "sh", "-c", c)
+			var cmd *exec.Cmd
+			if isWindows() {
+				cmd = exec.CommandContext(ctx, "cmd", "/C", c)
+			} else {
+				cmd = exec.CommandContext(ctx, "sh", "-c", c)
+			}
+
 			out, err := cmd.CombinedOutput()
 			mu.Lock()
 			outputs = append(outputs, string(out))
@@ -206,7 +225,7 @@ func (s *Scheduler) executeCommands(execID uint, j *models.Job) {
 	wg.Wait()
 	finished := time.Now()
 
-	// update execution
+	// Update execution record
 	var execRec models.Execution
 	if err := s.db.GORM.First(&execRec, execID).Error; err != nil {
 		log.Printf("failed load exec record: %v", err)
@@ -220,6 +239,7 @@ func (s *Scheduler) executeCommands(execID uint, j *models.Job) {
 		log.Printf("failed update exec: %v", err)
 	}
 
+	// Update job last run
 	now := time.Now()
 	j.LastRunAt = &now
 	if err := s.db.GORM.Save(j).Error; err != nil {

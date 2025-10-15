@@ -30,6 +30,15 @@ type Execution struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type Schedule struct {
+	Year   int `json:"year"`
+	Month  int `json:"month"`
+	Day    int `json:"day"`
+	Hour   int `json:"hour"`
+	Minute int `json:"minute"`
+}
+
+
 type User struct {
 	ID        uint           `gorm:"primaryKey" json:"id"`
 	Name      string         `gorm:"not null" json:"name"`

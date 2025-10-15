@@ -135,3 +135,25 @@ func RunMultipleCommands(commands []string) []string {
 	wg.Wait()
 	return outputs
 }
+
+
+
+// ListUsers returns mock or DB users
+func (h *Handler) ListUsers(c *fiber.Ctx) error {
+	users := []map[string]interface{}{
+		{"id": 1, "name": "Admin", "email": "admin@example.com"},
+		{"id": 2, "name": "User", "email": "user@example.com"},
+	}
+	return c.JSON(users)
+}
+
+// ListExecutions returns executed jobs
+func (h *Handler) ListExecutions(c *fiber.Ctx) error {
+	executions := []map[string]interface{}{
+		{"id": 1, "job_id": 1, "status": "success", "executed_at": "2025-10-16T12:00:00Z"},
+		{"id": 2, "job_id": 2, "status": "failed", "executed_at": "2025-10-16T13:00:00Z"},
+	}
+	return c.JSON(executions)
+}
+
+
