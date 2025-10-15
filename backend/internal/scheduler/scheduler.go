@@ -36,7 +36,6 @@ func New(d *db.DB) *Scheduler {
 	}
 }
 
-// Load and schedule all enabled jobs
 func (s *Scheduler) LoadAndStart() error {
 	var jobs []models.Job
 	if err := s.db.GORM.Where("enabled = ?", true).Find(&jobs).Error; err != nil {
@@ -58,7 +57,6 @@ func (s *Scheduler) Stop() {
 	<-ctx.Done()
 }
 
-// Schedule a job: either cron or exact datetime
 func (s *Scheduler) ScheduleJob(j *models.Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -78,7 +76,6 @@ func (s *Scheduler) ScheduleJob(j *models.Job) error {
 		return nil
 	}
 
-	// One-time job
 	if j.RunAt != nil && j.RunAt.After(time.Now()) {
 		duration := time.Until(*j.RunAt)
 		timer := time.AfterFunc(duration, func() {
@@ -92,7 +89,6 @@ func (s *Scheduler) ScheduleJob(j *models.Job) error {
 		return nil
 	}
 
-	// Recurring cron job
 	if j.Schedule != "" {
 		entryID, err := s.cron.AddFunc(j.Schedule, func() { s.runJob(j.ID) })
 		if err != nil {
@@ -103,10 +99,6 @@ func (s *Scheduler) ScheduleJob(j *models.Job) error {
 	}
 
 	return nil
-}
-
-func (s *Scheduler) RescheduleJob(j *models.Job) error {
-	return s.ScheduleJob(j)
 }
 
 func (s *Scheduler) Remove(jobID int64) {
@@ -137,7 +129,6 @@ func (s *Scheduler) RunJobNow(j *models.Job) (*models.Execution, error) {
 	return exec, nil
 }
 
-// runJob runs job by ID
 func (s *Scheduler) runJob(jobID uint) {
 	var j models.Job
 	if err := s.db.GORM.First(&j, jobID).Error; err != nil {
@@ -162,7 +153,6 @@ func (s *Scheduler) runJob(jobID uint) {
 	go s.executeCommands(exec.ID, &j)
 }
 
-// ExecuteCommand runs a single shell command cross-platform
 func ExecuteCommand(cmdStr string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -185,7 +175,6 @@ func isWindows() bool {
 	return strings.Contains(strings.ToLower(runtime.GOOS), "windows")
 }
 
-// executeCommands runs multiple commands concurrently and updates DB
 func (s *Scheduler) executeCommands(execID uint, j *models.Job) {
 	commands := j.Commands
 	if len(commands) == 0 && j.CommandsRaw != "" {
@@ -198,6 +187,11 @@ func (s *Scheduler) executeCommands(execID uint, j *models.Job) {
 	success := true
 
 	for _, cmdStr := range commands {
+		cmdStr = strings.TrimSpace(cmdStr)
+		if cmdStr == "" {
+			continue
+		}
+
 		wg.Add(1)
 		go func(c string) {
 			defer wg.Done()
@@ -225,7 +219,6 @@ func (s *Scheduler) executeCommands(execID uint, j *models.Job) {
 	wg.Wait()
 	finished := time.Now()
 
-	// Update execution record
 	var execRec models.Execution
 	if err := s.db.GORM.First(&execRec, execID).Error; err != nil {
 		log.Printf("failed load exec record: %v", err)
@@ -239,7 +232,6 @@ func (s *Scheduler) executeCommands(execID uint, j *models.Job) {
 		log.Printf("failed update exec: %v", err)
 	}
 
-	// Update job last run
 	now := time.Now()
 	j.LastRunAt = &now
 	if err := s.db.GORM.Save(j).Error; err != nil {

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -21,7 +20,6 @@ type Handler struct {
 }
 
 // ---- AUTH ----
-
 func (h *Handler) Register(c *fiber.Ctx) error {
 	var req struct {
 		Name     string `json:"name"`
@@ -86,7 +84,6 @@ func (h *Handler) AuthMiddleware(c *fiber.Ctx) error {
 }
 
 // ---- JOBS ----
-
 func (h *Handler) ListJobs(c *fiber.Ctx) error {
 	var jobs []models.Job
 	h.DB.GORM.Find(&jobs)
@@ -94,17 +91,86 @@ func (h *Handler) ListJobs(c *fiber.Ctx) error {
 }
 
 func (h *Handler) CreateJob(c *fiber.Ctx) error {
-	var j models.Job
-	if err := c.BodyParser(&j); err != nil {
+	var req struct {
+		Name        string   `json:"name"`
+		Commands    []string `json:"commands"`
+		CommandsRaw string   `json:"commands_raw"`
+		Schedule    string   `json:"schedule"`
+		RunAt       *time.Time `json:"run_at"`
+		Enabled     bool     `json:"enabled"`
+	}
+
+	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
 	}
-	j.CreatedAt = time.Now()
-	j.UpdatedAt = time.Now()
-	h.DB.GORM.Create(&j)
-	if j.Enabled {
-		_ = h.Scheduler.ScheduleJob(&j)
+
+	job := models.Job{
+		Name:      req.Name,
+		Schedule:  req.Schedule,
+		RunAt:     req.RunAt,
+		Enabled:   req.Enabled,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
-	return c.Status(201).JSON(j)
+
+	// Handle commands from either array or raw string
+	if len(req.Commands) > 0 {
+		job.Commands = req.Commands
+	} else if req.CommandsRaw != "" {
+		job.CommandsRaw = req.CommandsRaw
+		job.Commands = strings.Split(req.CommandsRaw, "\n")
+	}
+
+	if err := h.DB.GORM.Create(&job).Error; err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	if job.Enabled {
+		_ = h.Scheduler.ScheduleJob(&job)
+	}
+
+	return c.Status(201).JSON(job)
+}
+
+func (h *Handler) UpdateJob(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var job models.Job
+	if err := h.DB.GORM.First(&job, id).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Job not found"})
+	}
+
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
+	}
+
+	if req.Enabled != nil {
+		job.Enabled = *req.Enabled
+		job.UpdatedAt = time.Now()
+		h.DB.GORM.Save(&job)
+
+		if job.Enabled {
+			_ = h.Scheduler.ScheduleJob(&job)
+		} else {
+			h.Scheduler.Remove(int64(job.ID))
+		}
+	}
+
+	return c.JSON(job)
+}
+
+func (h *Handler) DeleteJob(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var job models.Job
+	if err := h.DB.GORM.First(&job, id).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Job not found"})
+	}
+
+	h.Scheduler.Remove(int64(job.ID))
+	h.DB.GORM.Delete(&job)
+	return c.JSON(fiber.Map{"message": "Job deleted"})
 }
 
 func (h *Handler) RunJobNow(c *fiber.Ctx) error {
@@ -120,40 +186,16 @@ func (h *Handler) RunJobNow(c *fiber.Ctx) error {
 	return c.JSON(exec)
 }
 
-// ---- PARALLEL MULTI-COMMAND ----
-func RunMultipleCommands(commands []string) []string {
-	var wg sync.WaitGroup
-	outputs := make([]string, len(commands))
-
-	for i, cmd := range commands {
-		wg.Add(1)
-		go func(i int, cmd string) {
-			defer wg.Done()
-			outputs[i] = scheduler.ExecuteCommand(cmd)
-		}(i, cmd)
-	}
-	wg.Wait()
-	return outputs
-}
-
-
-
-// ListUsers returns mock or DB users
+// ---- USERS ----
 func (h *Handler) ListUsers(c *fiber.Ctx) error {
-	users := []map[string]interface{}{
-		{"id": 1, "name": "Admin", "email": "admin@example.com"},
-		{"id": 2, "name": "User", "email": "user@example.com"},
-	}
+	var users []models.User
+	h.DB.GORM.Find(&users)
 	return c.JSON(users)
 }
 
-// ListExecutions returns executed jobs
+// ---- EXECUTIONS ----
 func (h *Handler) ListExecutions(c *fiber.Ctx) error {
-	executions := []map[string]interface{}{
-		{"id": 1, "job_id": 1, "status": "success", "executed_at": "2025-10-16T12:00:00Z"},
-		{"id": 2, "job_id": 2, "status": "failed", "executed_at": "2025-10-16T13:00:00Z"},
-	}
+	var executions []models.Execution
+	h.DB.GORM.Order("created_at desc").Limit(100).Find(&executions)
 	return c.JSON(executions)
 }
-
-

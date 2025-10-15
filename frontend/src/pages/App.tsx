@@ -3,45 +3,39 @@ import axios from "axios";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
+const SCHEDULES: Record<string, string> = {
+  "0 * * * * *": "Every minute",
+  "0 */5 * * * *": "Every 5 minutes",
+  "0 */15 * * * *": "Every 15 minutes",
+  "0 0 * * * *": "Every hour",
+  "0 0 8 * * *": "Daily at 8 AM",
+  "0 0 0 * * *": "Daily at midnight",
+  "0 0 8 * * 1": "Weekly (Monday 8 AM)",
+};
+
 export default function App() {
-  const [token, setToken] = useState<string | null>(
-    localStorage.getItem("token")
-  );
+  const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-
-  const [users, setUsers] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
   const [executions, setExecutions] = useState<any[]>([]);
-
   const [jobName, setJobName] = useState("");
   const [command, setCommand] = useState("");
-  const [scheduleText, setScheduleText] = useState(
-    JSON.stringify(
-      { year: 2025, month: 1, day: 1, hour: 8, minute: 0 },
-      null,
-      2
-    )
-  );
+  const [schedule, setSchedule] = useState("0 * * * * *");
 
-  // --- Fetch data ---
   useEffect(() => {
-    if (!token) return;
-    fetchUsers();
-    fetchJobs();
-    fetchExecutions();
-
-    const interval = setInterval(() => {
-      fetchUsers();
+    if (token) {
       fetchJobs();
       fetchExecutions();
-    }, 10000);
-
-    return () => clearInterval(interval);
+      const interval = setInterval(() => {
+        fetchJobs();
+        fetchExecutions();
+      }, 10000);
+      return () => clearInterval(interval);
+    }
   }, [token]);
 
-  // --- Auth ---
   async function login() {
     try {
       const res = await axios.post(`${API}/auth/login`, { email, password });
@@ -55,249 +49,154 @@ export default function App() {
   async function register() {
     try {
       await axios.post(`${API}/auth/register`, { email, password, name });
-      alert("Registered successfully! Now login.");
+      alert("Registered! Now login.");
     } catch (e: any) {
       alert("Registration failed: " + (e.response?.data?.error || e.message));
     }
   }
 
-  // --- Users ---
-  async function fetchUsers() {
-    if (!token) return;
-    try {
-      const res = await axios.get(`${API}/users`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setUsers(res.data);
-    } catch (e: any) {
-      console.error("Fetch users error", e);
-    }
-  }
-
-  async function changeRole(id: string, role: string) {
-    alert("Role change not implemented on backend"); // backend route missing
-  }
-
-  // --- Jobs ---
   async function fetchJobs() {
-    if (!token) return;
     try {
-      const res = await axios.get(`${API}/jobs`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await axios.get(`${API}/jobs`, { headers: { Authorization: `Bearer ${token}` } });
       setJobs(res.data);
-    } catch (e: any) {
-      console.error("Fetch jobs error", e);
-    }
+    } catch (e) {}
   }
 
   async function createJob() {
-    if (!token) return;
+    if (!jobName || !command) return alert("Fill all fields");
     try {
-      // Serialize schedule as a cron string or keep user input as string
-      // For simplicity, we’ll assume the user enters a cron expression
-      const cronExpr = scheduleText.trim();
-
-      // Commands as newline-separated
-      const commandsRaw = command.split("\n").join("\n");
-
       const res = await axios.post(
         `${API}/jobs`,
-        {
-          name: jobName,
-          commandsRaw: command,
-          schedule: scheduleText.trim(), // Cron expression
-          enabled: true,
-        },
+        { name: jobName, commands: command.split("\n").filter(c => c.trim()), schedule, enabled: true },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-
       setJobs([res.data, ...jobs]);
       setJobName("");
       setCommand("");
+      alert("Job created!");
     } catch (e: any) {
-      alert("Error creating job: " + (e.response?.data?.error || e.message));
+      alert("Error: " + (e.response?.data?.error || e.message));
     }
   }
 
-  async function runJobNow(id: string) {
-    if (!token) return;
+  async function toggleJob(id: number, enabled: boolean) {
     try {
-      await axios.post(
-        `${API}/jobs/${id}/run`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      alert("Job executed successfully");
+      const res = await axios.put(`${API}/jobs/${id}`, { enabled: !enabled }, { headers: { Authorization: `Bearer ${token}` } });
+      setJobs(prev => prev.map(j => j.id === id ? { ...j, enabled: res.data.enabled } : j));
+    } catch (e) {}
+  }
+
+  async function deleteJob(id: number) {
+    if (!confirm("Delete job?")) return;
+    try {
+      await axios.delete(`${API}/jobs/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      setJobs(prev => prev.filter(j => j.id !== id));
+    } catch (e) {}
+  }
+
+  async function runJobNow(id: number) {
+    try {
+      await axios.post(`${API}/jobs/${id}/run`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      alert("Job started!");
+      setTimeout(fetchExecutions, 2000);
     } catch (e: any) {
-      alert("Error running job: " + (e.response?.data?.error || e.message));
+      alert("Error: " + (e.response?.data?.error || e.message));
     }
   }
 
-  // --- Executions ---
   async function fetchExecutions() {
-    if (!token) return;
     try {
-      const res = await axios.get(`${API}/executions`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await axios.get(`${API}/executions`, { headers: { Authorization: `Bearer ${token}` } });
       setExecutions(res.data);
-    } catch (e: any) {
-      console.error("Fetch executions error", e);
-    }
+    } catch (e) {}
   }
 
-  // --- Logout ---
-  function logout() {
-    localStorage.removeItem("token");
-    setToken(null);
-    setUsers([]);
-    setJobs([]);
-    setExecutions([]);
-  }
-
-  // --- Login/Register UI ---
-  if (!token)
+  if (!token) {
     return (
-      <div className="max-w-md mx-auto mt-10 p-6 bg-slate-800 rounded shadow text-white">
-        <h2 className="text-2xl font-bold mb-4 text-center">
-          Login / Register
-        </h2>
-        <input
-          className="input mb-2"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <input
-          type="password"
-          className="input mb-2"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <input
-          className="input mb-4"
-          placeholder="Name (register only)"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <div className="flex gap-2 justify-center">
-          <button
-            className="button bg-blue-500 hover:bg-blue-400"
-            onClick={login}
-          >
-            Login
-          </button>
-          <button
-            className="button bg-green-500 hover:bg-green-400"
-            onClick={register}
-          >
-            Register
-          </button>
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+        <div className="max-w-md w-full p-6 bg-slate-800 rounded-lg text-white space-y-3">
+          <h2 className="text-2xl font-bold text-center">Job Scheduler</h2>
+          <input className="w-full px-4 py-2 bg-slate-700 rounded" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input type="password" className="w-full px-4 py-2 bg-slate-700 rounded" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <input className="w-full px-4 py-2 bg-slate-700 rounded" placeholder="Name (for register)" value={name} onChange={(e) => setName(e.target.value)} />
+          <div className="flex gap-2">
+            <button className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded" onClick={login}>Login</button>
+            <button className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-500 rounded" onClick={register}>Register</button>
+          </div>
         </div>
       </div>
     );
+  }
 
-  // --- Main App UI ---
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-4 text-white">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Admin Panel / Job Scheduler</h1>
-        <button className="button bg-red-600 hover:bg-red-500" onClick={logout}>
-          Logout
-        </button>
-      </div>
+    <div className="min-h-screen bg-slate-900 text-white p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="flex justify-between items-center bg-slate-800 p-4 rounded">
+          <h1 className="text-2xl font-bold">Job Scheduler</h1>
+          <button className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded" onClick={() => { localStorage.removeItem("token"); setToken(null); }}>Logout</button>
+        </div>
 
-      {/* Users */}
-      <div className="card space-y-2">
-        <h2 className="text-xl font-semibold">Users</h2>
-        <table className="w-full table-auto text-left">
-          <thead>
-            <tr className="border-b border-slate-700">
-              <th>Email</th>
-              <th>Name</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => (
-              <tr key={u.id} className="border-b border-slate-700">
-                <td>{u.email}</td>
-                <td>{u.name || "-"}</td>
-              </tr>
+        {/* Create Job */}
+        <div className="bg-slate-800 p-6 rounded space-y-3">
+          <h2 className="text-xl font-bold">Create Job</h2>
+          <input className="w-full px-4 py-2 bg-slate-700 rounded" placeholder="Job Name" value={jobName} onChange={(e) => setJobName(e.target.value)} />
+          <textarea className="w-full px-4 py-2 bg-slate-700 rounded h-20" placeholder="Commands (one per line)" value={command} onChange={(e) => setCommand(e.target.value)} />
+          <select className="w-full px-4 py-2 bg-slate-700 rounded" value={schedule} onChange={(e) => setSchedule(e.target.value)}>
+            {Object.entries(SCHEDULES).map(([cron, label]) => (
+              <option key={cron} value={cron}>{label}</option>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </select>
+          <button className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded" onClick={createJob}>Create</button>
+        </div>
 
-      {/* Create Job */}
-      <div className="card space-y-2">
-        <h2 className="text-xl font-semibold">Create Job</h2>
-        <input
-          className="input"
-          placeholder="Job Name"
-          value={jobName}
-          onChange={(e) => setJobName(e.target.value)}
-        />
-        <input
-          className="input"
-          placeholder="Command"
-          value={command}
-          onChange={(e) => setCommand(e.target.value)}
-        />
-        <textarea
-          className="input h-24"
-          value={scheduleText}
-          onChange={(e) => setScheduleText(e.target.value)}
-        />
-        <button
-          className="button bg-blue-500 hover:bg-blue-400"
-          onClick={createJob}
-        >
-          Create Job
-        </button>
-      </div>
-
-      {/* Jobs List */}
-      <div className="card space-y-2">
-        <h2 className="text-xl font-semibold">Jobs</h2>
-        {jobs.map((job) => (
-          <div
-            key={job.id}
-            className="flex justify-between border-b border-slate-700 py-2"
-          >
-            <div>
-              <div className="font-semibold">{job.name}</div>
-              <div className="text-sm text-slate-300">{job.command}</div>
-              <pre className="text-xs text-slate-400">
-                {JSON.stringify(job.schedule, null, 2)}
-              </pre>
+        {/* Jobs */}
+        <div className="bg-slate-800 p-6 rounded">
+          <h2 className="text-xl font-bold mb-4">Jobs ({jobs.length})</h2>
+          {jobs.map((job) => (
+            <div key={job.id} className="bg-slate-700 p-4 rounded mb-3">
+              <div className="flex justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold">{job.name}</h3>
+                    <span className={`px-2 py-1 rounded text-xs ${job.enabled ? "bg-green-600" : "bg-gray-600"}`}>
+                      {job.enabled ? "ON" : "OFF"}
+                    </span>
+                  </div>
+                  <div className="text-sm text-slate-300 mt-1">
+                    {job.commands?.map((cmd: string, i: number) => (
+                      <div key={i} className="font-mono text-xs">{cmd}</div>
+                    ))}
+                  </div>
+                  <div className="text-sm text-slate-400 mt-1">{SCHEDULES[job.schedule] || job.schedule}</div>
+                </div>
+                <div className="flex gap-2">
+                  <button className="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 rounded text-sm" onClick={() => runJobNow(job.id)}>Run</button>
+                  <button className="px-3 py-1 bg-orange-600 hover:bg-orange-500 rounded text-sm" onClick={() => toggleJob(job.id, job.enabled)}>
+                    {job.enabled ? "Disable" : "Enable"}
+                  </button>
+                  <button className="px-3 py-1 bg-red-600 hover:bg-red-500 rounded text-sm" onClick={() => deleteJob(job.id)}>Delete</button>
+                </div>
+              </div>
             </div>
-            <button
-              className="button bg-yellow-500 hover:bg-yellow-400"
-              onClick={() => runJobNow(job.id)}
-            >
-              Run Now
-            </button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      {/* Executions */}
-      <div className="card space-y-2">
-        <h2 className="text-xl font-semibold">Executions</h2>
-        {executions.map((ex) => (
-          <div
-            key={ex.id}
-            className="border-b border-slate-700 py-2 text-slate-200"
-          >
-            <div className="font-semibold">Job ID: {ex.job_id}</div>
-            <div>Status: {ex.status}</div>
-            <div className="text-xs text-slate-400">
-              {new Date(ex.executed_at).toLocaleString()}
+        {/* Executions */}
+        <div className="bg-slate-800 p-6 rounded">
+          <h2 className="text-xl font-bold mb-4">Executions ({executions.length})</h2>
+          {executions.slice(0, 10).map((ex) => (
+            <div key={ex.id} className="bg-slate-700 p-3 rounded mb-2 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-bold">Job {ex.job_id}</span>
+                <span className={`px-2 py-1 rounded text-xs ${ex.success ? "bg-green-600" : "bg-red-600"}`}>
+                  {ex.success ? "✓" : "✗"}
+                </span>
+                <span className="text-slate-400 text-xs">{new Date(ex.started_at).toLocaleString()}</span>
+              </div>
+              {ex.output && <pre className="text-xs text-slate-300 mt-2 bg-slate-800 p-2 rounded overflow-x-auto">{ex.output}</pre>}
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
