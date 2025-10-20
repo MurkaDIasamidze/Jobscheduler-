@@ -63,6 +63,7 @@ func (s *Scheduler) ScheduleJob(j *models.Job) error {
 
 	id := int64(j.ID)
 
+	// Remove existing schedule
 	if eID, ok := s.jobs[id]; ok {
 		s.cron.Remove(eID)
 		delete(s.jobs, id)
@@ -76,26 +77,39 @@ func (s *Scheduler) ScheduleJob(j *models.Job) error {
 		return nil
 	}
 
-	if j.RunAt != nil && j.RunAt.After(time.Now()) {
+	// One-time job (priority over recurring)
+	if j.RunAt != nil {
+		if j.RunAt.Before(time.Now()) {
+			log.Printf("job %d run_at is in the past, skipping", j.ID)
+			return nil
+		}
+		
 		duration := time.Until(*j.RunAt)
 		timer := time.AfterFunc(duration, func() {
 			s.runJob(j.ID)
 			s.mu.Lock()
 			delete(s.onceJobs, id)
 			s.mu.Unlock()
+			
+			// Disable job after one-time execution
+			j.Enabled = false
+			if err := s.db.GORM.Save(j).Error; err != nil {
+				log.Printf("failed to disable one-time job %d: %v", j.ID, err)
+			}
 		})
 		s.onceJobs[id] = timer
-		log.Printf("scheduled one-time job %d at %s", j.ID, j.RunAt.String())
+		log.Printf("scheduled one-time job %d at %s (in %v)", j.ID, j.RunAt.Format(time.RFC3339), duration)
 		return nil
 	}
 
+	// Recurring cron job
 	if j.Schedule != "" {
 		entryID, err := s.cron.AddFunc(j.Schedule, func() { s.runJob(j.ID) })
 		if err != nil {
 			return err
 		}
 		s.jobs[id] = entryID
-		log.Printf("scheduled cron job %d -> entry %v (expr: %s)", j.ID, entryID, j.Schedule)
+		log.Printf("scheduled recurring job %d with cron: %s", j.ID, j.Schedule)
 	}
 
 	return nil

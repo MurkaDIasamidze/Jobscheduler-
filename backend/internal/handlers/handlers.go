@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"strings"
 	"time"
 
@@ -117,16 +118,26 @@ func (h *Handler) ListJobs(c *fiber.Ctx) error {
 
 func (h *Handler) CreateJob(c *fiber.Ctx) error {
 	var req struct {
-		Name        string   `json:"name"`
-		Commands    []string `json:"commands"`
-		CommandsRaw string   `json:"commands_raw"`
-		Schedule    string   `json:"schedule"`
+		Name        string     `json:"name"`
+		Commands    []string   `json:"commands"`
+		CommandsRaw string     `json:"commands_raw"`
+		Schedule    string     `json:"schedule"`
 		RunAt       *time.Time `json:"run_at"`
-		Enabled     bool     `json:"enabled"`
+		Enabled     bool       `json:"enabled"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
+	}
+
+	// Validate: must have either schedule or run_at
+	if req.Schedule == "" && req.RunAt == nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Must provide either schedule or run_at"})
+	}
+
+	// Validate run_at is in the future
+	if req.RunAt != nil && req.RunAt.Before(time.Now()) {
+		return c.Status(400).JSON(fiber.Map{"error": "run_at must be in the future"})
 	}
 
 	job := models.Job{
@@ -151,7 +162,10 @@ func (h *Handler) CreateJob(c *fiber.Ctx) error {
 	}
 
 	if job.Enabled {
-		_ = h.Scheduler.ScheduleJob(&job)
+		if err := h.Scheduler.ScheduleJob(&job); err != nil {
+			log.Printf("Failed to schedule job %d: %v", job.ID, err)
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to schedule job: " + err.Error()})
+		}
 	}
 
 	return c.Status(201).JSON(job)

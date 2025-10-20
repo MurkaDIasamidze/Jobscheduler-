@@ -8,15 +8,20 @@ import (
 )
 
 func Setup(app *fiber.App, h *handlers.Handler) {
-	app.Use(cors.New())
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowMethods: "GET, POST, PUT, DELETE, OPTIONS",
+	}))
 
 	api := app.Group("/api")
 
-	// Auth routes
+	// Public routes (NO AUTH REQUIRED)
+	api.Get("/health", h.HealthCheck)
 	api.Post("/auth/register", h.Register)
 	api.Post("/auth/login", h.Login)
 
-	// Protected routes
+	// Protected routes (AUTH REQUIRED)
 	protected := api.Group("/", h.AuthMiddleware)
 
 	// Job routes
