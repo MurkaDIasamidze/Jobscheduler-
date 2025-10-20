@@ -1,38 +1,48 @@
 # Job Scheduler
 
-A full-featured **Job Scheduler** built with **Next.js**, **React**, **TypeScript**, **Tailwind CSS**, **PostgreSQL**, and **Prisma**.
-Supports flexible scheduling, execution history, real-time updates, and role-based user management.
+A full-featured Job Scheduler built with Go, Fiber, React, TypeScript, Tailwind CSS, PostgreSQL, and GORM. Supports flexible cron-based scheduling, execution history, real-time updates, and secure authentication.
 
----
+## Features
 
-## **Features**
-
-### **Frontend**
-
+### Frontend
 * User authentication (Register/Login/Logout)
+* Health check on startup - ensures backend and database are connected before use
 * Job management:
-
   * Create, enable/disable, delete jobs
-  * Flexible JSON-based schedule
-  * Immediate UI updates
+  * User-friendly schedule selection (every minute, hourly, daily, weekly, etc.)
+  * Multiple commands per job (executed in parallel)
+  * Run jobs immediately with "Run Now" button
 * Real-time job and execution updates (auto-refresh every 10 seconds)
-* Execution history display with success status and output
+* Execution history display with:
+  * Success/failure status
+  * Command output logs
+  * Timestamps
+* Comprehensive error handling and console logging for debugging
+* Clean, responsive UI with dark theme
 
-### **Backend**
+### Backend
+* **Go Fiber** REST API with JWT authentication
+* **Robfig cron** for flexible scheduling (supports cron expressions with seconds)
+* Job CRUD operations:
+  * Create jobs with multiple commands
+  * Update job status (enable/disable)
+  * Delete jobs
+  * Run jobs on-demand
+* **Concurrent command execution** - runs multiple commands in parallel per job
+* **GORM hooks** for automatic command serialization/deserialization
+* Cross-platform command execution (Windows/Linux/Mac)
+* Health check endpoint for monitoring database connectivity
+* Execution logging to PostgreSQL with detailed output
+* Scheduler automatically:
+  * Loads enabled jobs on startup
+  * Supports both recurring (cron) and one-time (RunAt) schedules
+  * Records last run times
+  * Logs all execution results
 
-* Next.js API routes with JWT authentication
-* Job CRUD operations
-* Flexible schedule parsing and validation
-* Worker loop for executing scheduled jobs
-* Worker pool support for parallel execution
-* Execution logging to PostgreSQL
-
-### **Database**
-
-* PostgreSQL + Prisma ORM
+### Database
+* **PostgreSQL** + **GORM ORM**
 * Tables:
-
-  * `users` – user data and roles
-  * `jobs` – scheduled jobs
-  * `executions` – logs of executed jobs
+  * `users` – user data, email, password hash, and roles
+  * `jobs` – scheduled jobs with commands, cron schedules, and enabled status
+  * `executions` – complete logs of executed jobs with output, timestamps, and success status
 
