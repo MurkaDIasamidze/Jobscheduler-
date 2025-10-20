@@ -3,8 +3,8 @@ package db
 import (
 	"log"
 
-	"github.com/yourusername/jobscheduler-go/internal/config"
-	"github.com/yourusername/jobscheduler-go/internal/models"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/config"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )

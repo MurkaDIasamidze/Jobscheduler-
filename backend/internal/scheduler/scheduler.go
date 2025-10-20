@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
-	"github.com/yourusername/jobscheduler-go/internal/db"
-	"github.com/yourusername/jobscheduler-go/internal/models"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/db"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/models"
 )
 
 type Scheduler struct {

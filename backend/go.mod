@@ -1,4 +1,5 @@
-module github.com/yourusername/jobscheduler-go
+module github.com/MurkaDIasamidze/Jobscheduler-
+
 
 go 1.21
 

@@ -4,7 +4,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 
-	"github.com/yourusername/jobscheduler-go/internal/handlers"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/handlers"
 )
 
 func Setup(app *fiber.App, h *handlers.Handler) {

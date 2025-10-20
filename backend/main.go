@@ -4,11 +4,11 @@ import (
 	"log"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/yourusername/jobscheduler-go/internal/config"
-	"github.com/yourusername/jobscheduler-go/internal/db"
-	"github.com/yourusername/jobscheduler-go/internal/handlers"
-	"github.com/yourusername/jobscheduler-go/internal/router"
-	"github.com/yourusername/jobscheduler-go/internal/scheduler"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/config"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/db"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/handlers"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/router"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/scheduler"
 )
 
 func main() {

@@ -8,9 +8,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/yourusername/jobscheduler-go/internal/db"
-	"github.com/yourusername/jobscheduler-go/internal/models"
-	"github.com/yourusername/jobscheduler-go/internal/scheduler"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/db"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/models"
+	"github.com/MurkaDIasamidze/Jobscheduler-/internal/scheduler"
 )
 
 type Handler struct {
