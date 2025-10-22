@@ -9,164 +9,221 @@ import (
 	"sync"
 	"time"
 
-	"github.com/robfig/cron/v3"
 	"github.com/MurkaDIasamidze/Jobscheduler-/internal/db"
 	"github.com/MurkaDIasamidze/Jobscheduler-/internal/models"
 )
 
 type Scheduler struct {
 	db       *db.DB
-	cron     *cron.Cron
-	jobs     map[int64]cron.EntryID
-	onceJobs map[int64]*time.Timer
+	jobQueue chan *models.Job
+	workers  int
 	mu       sync.Mutex
+	onceJobs map[int64]*time.Timer
 	ctx      context.Context
 	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 }
 
-func New(d *db.DB) *Scheduler {
+func New(d *db.DB, workers int) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Scheduler{
 		db:       d,
-		cron:     cron.New(cron.WithSeconds()),
-		jobs:     make(map[int64]cron.EntryID),
+		jobQueue: make(chan *models.Job, 100),
+		workers:  workers,
 		onceJobs: make(map[int64]*time.Timer),
 		ctx:      ctx,
 		cancel:   cancel,
 	}
 }
 
-func (s *Scheduler) LoadAndStart() error {
+// Start scheduler loop and worker pool
+func (s *Scheduler) LoadAndStart() {
+	s.startWorkers()
+
 	var jobs []models.Job
 	if err := s.db.GORM.Where("enabled = ?", true).Find(&jobs).Error; err != nil {
-		return err
+		log.Printf("failed to load jobs: %v", err)
+		return
 	}
 
 	for i := range jobs {
-		_ = s.ScheduleJob(&jobs[i])
+		s.ScheduleJob(&jobs[i])
 	}
 
-	s.cron.Start()
-	log.Printf("scheduler started with %d cron jobs and %d one-time jobs", len(s.jobs), len(s.onceJobs))
-	return nil
+	go s.schedulerLoop()
+	log.Printf("scheduler started with %d jobs", len(jobs))
 }
 
-func (s *Scheduler) Stop() {
-	s.cancel()
-	ctx := s.cron.Stop()
-	<-ctx.Done()
+// Worker pool
+func (s *Scheduler) startWorkers() {
+	for i := 0; i < s.workers; i++ {
+		s.wg.Add(1)
+		go func(id int) {
+			defer s.wg.Done()
+			for {
+				select {
+				case job := <-s.jobQueue:
+					s.executeJob(job)
+				case <-s.ctx.Done():
+					return
+				}
+			}
+		}(i)
+	}
 }
 
-func (s *Scheduler) ScheduleJob(j *models.Job) error {
+// Scheduler loop: checks DB every minute
+func (s *Scheduler) schedulerLoop() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case now := <-ticker.C:
+			s.checkAndEnqueueJobs(now)
+		}
+	}
+}
+
+// Check DB for due jobs
+func (s *Scheduler) checkAndEnqueueJobs(now time.Time) {
+	var jobs []models.Job
+	if err := s.db.GORM.Where("enabled = ?", true).Find(&jobs).Error; err != nil {
+		log.Printf("failed to load jobs: %v", err)
+		return
+	}
+
+	for i := range jobs {
+		j := &jobs[i]
+
+		// One-time job
+		if j.RunAt != nil && !j.RunAt.Before(now) {
+			if _, exists := s.onceJobs[int64(j.ID)]; !exists {
+				duration := time.Until(*j.RunAt)
+				timer := time.AfterFunc(duration, func() {
+					s.enqueueJob(j)
+					s.mu.Lock()
+					delete(s.onceJobs, int64(j.ID))
+					j.Enabled = false
+					_ = s.db.GORM.Save(j)
+					s.mu.Unlock()
+				})
+				s.mu.Lock()
+				s.onceJobs[int64(j.ID)] = timer
+				s.mu.Unlock()
+				log.Printf("scheduled one-time job %d at %s", j.ID, j.RunAt.Format(time.RFC3339))
+			}
+			continue
+		}
+
+		// Recurring job: enqueue every minute
+		if j.Schedule != "" {
+			s.enqueueJob(j)
+		}
+	}
+}
+
+// Public method to schedule a job immediately
+func (s *Scheduler) ScheduleJob(j *models.Job) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	id := int64(j.ID)
-
-	// Remove existing schedule
-	if eID, ok := s.jobs[id]; ok {
-		s.cron.Remove(eID)
-		delete(s.jobs, id)
-	}
-	if t, ok := s.onceJobs[id]; ok {
-		t.Stop()
-		delete(s.onceJobs, id)
-	}
-
-	if !j.Enabled {
-		return nil
-	}
-
-	// One-time job (priority over recurring)
-	if j.RunAt != nil {
-		if j.RunAt.Before(time.Now()) {
-			log.Printf("job %d run_at is in the past, skipping", j.ID)
-			return nil
-		}
-		
-		duration := time.Until(*j.RunAt)
-		timer := time.AfterFunc(duration, func() {
-			s.runJob(j.ID)
-			s.mu.Lock()
-			delete(s.onceJobs, id)
-			s.mu.Unlock()
-			
-			// Disable job after one-time execution
-			j.Enabled = false
-			if err := s.db.GORM.Save(j).Error; err != nil {
-				log.Printf("failed to disable one-time job %d: %v", j.ID, err)
-			}
-		})
-		s.onceJobs[id] = timer
-		log.Printf("scheduled one-time job %d at %s (in %v)", j.ID, j.RunAt.Format(time.RFC3339), duration)
-		return nil
-	}
-
-	// Recurring cron job
-	if j.Schedule != "" {
-		entryID, err := s.cron.AddFunc(j.Schedule, func() { s.runJob(j.ID) })
-		if err != nil {
-			return err
-		}
-		s.jobs[id] = entryID
-		log.Printf("scheduled recurring job %d with cron: %s", j.ID, j.Schedule)
-	}
-
-	return nil
+	s.enqueueJob(j)
 }
 
+// Enqueue job into worker queue
+func (s *Scheduler) enqueueJob(j *models.Job) {
+	select {
+	case s.jobQueue <- j:
+		log.Printf("enqueued job %d for execution", j.ID)
+	default:
+		log.Printf("job queue full, job %d skipped", j.ID)
+	}
+}
+
+// Remove job
 func (s *Scheduler) Remove(jobID int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if eID, ok := s.jobs[jobID]; ok {
-		s.cron.Remove(eID)
-		delete(s.jobs, jobID)
-	}
 	if t, ok := s.onceJobs[jobID]; ok {
 		t.Stop()
 		delete(s.onceJobs, jobID)
 	}
-	log.Printf("removed job %d from scheduler", jobID)
+	log.Printf("removed job %d", jobID)
 }
 
+// Run job immediately
 func (s *Scheduler) RunJobNow(j *models.Job) (*models.Execution, error) {
-	exec := &models.Execution{
+	execRec := &models.Execution{
 		JobID:     j.ID,
 		StartedAt: time.Now(),
 		CreatedAt: time.Now(),
 	}
-	if err := s.db.GORM.Create(exec).Error; err != nil {
+	if err := s.db.GORM.Create(execRec).Error; err != nil {
 		return nil, err
 	}
-
-	go s.executeCommands(exec.ID, j)
-	return exec, nil
+	s.enqueueJob(j)
+	return execRec, nil
 }
 
-func (s *Scheduler) runJob(jobID uint) {
-	var j models.Job
-	if err := s.db.GORM.First(&j, jobID).Error; err != nil {
-		log.Printf("job not found %d: %v", jobID, err)
-		return
-	}
-	if !j.Enabled {
-		log.Printf("job %d disabled; skipping", jobID)
-		return
+// Execute job commands (workers)
+func (s *Scheduler) executeJob(j *models.Job) {
+	commands := j.Commands
+	if len(commands) == 0 && j.CommandsRaw != "" {
+		commands = strings.Split(j.CommandsRaw, "\n")
 	}
 
-	exec := &models.Execution{
-		JobID:     j.ID,
-		StartedAt: time.Now(),
-		CreatedAt: time.Now(),
-	}
-	if err := s.db.GORM.Create(exec).Error; err != nil {
-		log.Printf("failed create execution: %v", err)
-		return
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	outputs := []string{}
+	success := true
+
+	for _, cmdStr := range commands {
+		cmdStr = strings.TrimSpace(cmdStr)
+		if cmdStr == "" {
+			continue
+		}
+
+		wg.Add(1)
+		go func(c string) {
+			defer wg.Done()
+			out := ExecuteCommand(c)
+			mu.Lock()
+			outputs = append(outputs, out)
+			if strings.Contains(strings.ToLower(out), "error") {
+				success = false
+			}
+			mu.Unlock()
+		}(cmdStr)
 	}
 
-	go s.executeCommands(exec.ID, &j)
+	wg.Wait()
+	finished := time.Now()
+
+	// Update execution record
+	execRec := &models.Execution{}
+	if err := s.db.GORM.Where("job_id = ?", j.ID).Order("created_at desc").First(execRec).Error; err != nil {
+		log.Printf("failed to load execution record: %v", err)
+		return
+	}
+	execRec.FinishedAt = &finished
+	execRec.Output = strings.Join(outputs, "\n")
+	execRec.Success = success
+	_ = s.db.GORM.Save(execRec)
+
+	// Update job last run
+	j.LastRunAt = &finished
+	_ = s.db.GORM.Save(j)
+
+	if success {
+		log.Printf("job %d executed successfully", j.ID)
+	} else {
+		log.Printf("job %d failed", j.ID)
+	}
 }
 
+// Execute a single command
 func ExecuteCommand(cmdStr string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -189,72 +246,8 @@ func isWindows() bool {
 	return strings.Contains(strings.ToLower(runtime.GOOS), "windows")
 }
 
-func (s *Scheduler) executeCommands(execID uint, j *models.Job) {
-	commands := j.Commands
-	if len(commands) == 0 && j.CommandsRaw != "" {
-		commands = strings.Split(j.CommandsRaw, "\n")
-	}
-
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	outputs := []string{}
-	success := true
-
-	for _, cmdStr := range commands {
-		cmdStr = strings.TrimSpace(cmdStr)
-		if cmdStr == "" {
-			continue
-		}
-
-		wg.Add(1)
-		go func(c string) {
-			defer wg.Done()
-			ctx, cancel := context.WithTimeout(s.ctx, 5*time.Minute)
-			defer cancel()
-
-			var cmd *exec.Cmd
-			if isWindows() {
-				cmd = exec.CommandContext(ctx, "cmd", "/C", c)
-			} else {
-				cmd = exec.CommandContext(ctx, "sh", "-c", c)
-			}
-
-			out, err := cmd.CombinedOutput()
-			mu.Lock()
-			outputs = append(outputs, string(out))
-			if err != nil {
-				success = false
-				outputs = append(outputs, err.Error())
-			}
-			mu.Unlock()
-		}(cmdStr)
-	}
-
-	wg.Wait()
-	finished := time.Now()
-
-	var execRec models.Execution
-	if err := s.db.GORM.First(&execRec, execID).Error; err != nil {
-		log.Printf("failed load exec record: %v", err)
-		return
-	}
-	execRec.FinishedAt = &finished
-	execRec.Output = strings.Join(outputs, "\n")
-	execRec.Success = success
-
-	if err := s.db.GORM.Save(&execRec).Error; err != nil {
-		log.Printf("failed update exec: %v", err)
-	}
-
-	now := time.Now()
-	j.LastRunAt = &now
-	if err := s.db.GORM.Save(j).Error; err != nil {
-		log.Printf("failed update job last run: %v", err)
-	}
-
-	if success {
-		log.Printf("job %d executed successfully; output len=%d", j.ID, len(execRec.Output))
-	} else {
-		log.Printf("job %d execution failed; output len=%d", j.ID, len(execRec.Output))
-	}
+// Stop scheduler and all workers
+func (s *Scheduler) Stop() {
+	s.cancel()
+	s.wg.Wait()
 }

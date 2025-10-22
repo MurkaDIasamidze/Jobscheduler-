@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
@@ -11,6 +12,7 @@ type Config struct {
 	Port        string
 	DatabaseURL string
 	JWTSecret   string
+	Workers     int
 }
 
 func Load() *Config {
@@ -31,9 +33,17 @@ func Load() *Config {
 		log.Fatal("JWT_SECRET missing")
 	}
 
+	workers := 5
+	if w := os.Getenv("WORKERS"); w != "" {
+		if parsed, err := strconv.Atoi(w); err == nil && parsed > 0 {
+			workers = parsed
+		}
+	}
+
 	return &Config{
 		Port:        port,
 		DatabaseURL: dbURL,
 		JWTSecret:   secret,
+		Workers:     workers,
 	}
 }

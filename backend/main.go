@@ -11,13 +11,20 @@ import (
 	"github.com/MurkaDIasamidze/Jobscheduler-/internal/scheduler"
 )
 
+
 func main() {
 	cfg := config.Load()
 	database := db.New(cfg)
-	sched := scheduler.New(database)
+
+	// Pass worker count from config
+	sched := scheduler.New(database, cfg.Workers)
 	go sched.LoadAndStart()
 
-	h := &handlers.Handler{DB: database, Scheduler: sched, JWTSecret: cfg.JWTSecret}
+	h := &handlers.Handler{
+		DB:        database,
+		Scheduler: sched,
+		JWTSecret: cfg.JWTSecret,
+	}
 	app := fiber.New()
 
 	router.Setup(app, h)
